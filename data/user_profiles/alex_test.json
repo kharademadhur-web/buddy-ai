@@ -1,0 +1,172 @@
+{
+  "user_id": "alex_test",
+  "created_at": "2025-10-17T18:20:35.972278",
+  "personality": {
+    "communication_style": "neutral",
+    "vocabulary_level": "medium",
+    "emoji_usage": 0.0,
+    "humor_preference": 0.5,
+    "formality": 0.4,
+    "verbosity": 0.30000000000000004
+  },
+  "preferences": {
+    "favorite_topics": [],
+    "interests": [],
+    "learning_goals": [],
+    "time_zone": "UTC",
+    "language": "en"
+  },
+  "conversation_history": [
+    {
+      "timestamp": "2025-10-17T18:20:35.974275",
+      "message": "Hi! My name is Alex and I am 25 years old. I work as a software engineer.",
+      "emotion": {
+        "emotion": "neutral",
+        "sentiment": 0.0,
+        "confidence": 0.5,
+        "emotion_scores": {
+          "joy": 0,
+          "sadness": 0,
+          "anger": 0,
+          "fear": 0,
+          "surprise": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2025-10-17T18:20:45.838202",
+      "message": "Solve 2x + 5 = 15",
+      "emotion": {
+        "emotion": "neutral",
+        "sentiment": 0.0,
+        "confidence": 0.5,
+        "emotion_scores": {
+          "joy": 0,
+          "sadness": 0,
+          "anger": 0,
+          "fear": 0,
+          "surprise": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2025-10-17T18:20:55.183609",
+      "message": "I am feeling really stressed about my work deadline",
+      "emotion": {
+        "emotion": "fear",
+        "sentiment": -0.4,
+        "confidence": 0.8,
+        "emotion_scores": {
+          "joy": 0,
+          "sadness": 0,
+          "anger": 0,
+          "fear": 4,
+          "surprise": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2025-10-17T18:21:05.242393",
+      "message": "Who am I and what do I do?",
+      "emotion": {
+        "emotion": "neutral",
+        "sentiment": 0.0,
+        "confidence": 0.5,
+        "emotion_scores": {
+          "joy": 0,
+          "sadness": 0,
+          "anger": 0,
+          "fear": 0,
+          "surprise": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2025-10-17T18:21:25.337401",
+      "message": "Tell me a joke",
+      "emotion": {
+        "emotion": "neutral",
+        "sentiment": 0.0,
+        "confidence": 0.5,
+        "emotion_scores": {
+          "joy": 0,
+          "sadness": 0,
+          "anger": 0,
+          "fear": 0,
+          "surprise": 0
+        }
+      }
+    }
+  ],
+  "memory_facts": {
+    "personal": {
+      "name": "Feeling",
+      "age": 25,
+      "job": "Software Engineer"
+    },
+    "relationships": {},
+    "goals": {},
+    "challenges": {
+      "2025-10-17T18:20:55.183609": "I am feeling really stressed about my work deadline"
+    },
+    "achievements": {},
+    "preferences": {}
+  },
+  "emotional_profile": {
+    "baseline_sentiment": -0.08,
+    "emotion_history": [
+      {
+        "timestamp": "2025-10-17T18:20:35.972278",
+        "emotion": "neutral",
+        "sentiment": 0.0
+      },
+      {
+        "timestamp": "2025-10-17T18:20:45.838202",
+        "emotion": "neutral",
+        "sentiment": 0.0
+      },
+      {
+        "timestamp": "2025-10-17T18:20:55.183609",
+        "emotion": "fear",
+        "sentiment": -0.4
+      },
+      {
+        "timestamp": "2025-10-17T18:21:05.242393",
+        "emotion": "neutral",
+        "sentiment": 0.0
+      },
+      {
+        "timestamp": "2025-10-17T18:21:25.337401",
+        "emotion": "neutral",
+        "sentiment": 0.0
+      }
+    ],
+    "stress_level": 0.0,
+    "common_emotions": []
+  },
+  "communication_patterns": {
+    "common_phrases": [],
+    "sentence_structure": "medium",
+    "question_frequency": 0.0475,
+    "average_message_length": 13.440100000000003
+  },
+  "decision_making": {
+    "risk_tolerance": 0.5,
+    "decision_speed": 0.5,
+    "analytical_vs_intuitive": 0.5,
+    "past_decisions": []
+  },
+  "learning_style": {
+    "visual": 0.33,
+    "auditory": 0.33,
+    "kinesthetic": 0.34,
+    "preferred_explanation_style": "examples"
+  },
+  "statistics": {
+    "total_messages": 5,
+    "total_conversations": 0,
+    "average_session_length": 0,
+    "last_interaction": "2025-10-17T18:21:25.337401",
+    "topics_discussed": {}
+  }
+}

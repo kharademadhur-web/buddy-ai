@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+*.egg-info/
+
+# Models (optional - comment out if you want to commit models)
+*.bin
+*.safetensors
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+backend.out.log
+backend.err.log
+backend.log
+
+# Node
+node_modules/
+dist/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Audio files
+frontend/assets/audio/*.mp3
