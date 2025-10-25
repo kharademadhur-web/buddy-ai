@@ -5,6 +5,6 @@
   "outputDirectory": "dist",
   "ignoreCommand": "echo Deploying frontend only",
   "env": {
-    "VITE_API_BASE": "https://YOUR_RENDER_BACKEND_URL"
+    "VITE_API_BASE": ""
   }
 }

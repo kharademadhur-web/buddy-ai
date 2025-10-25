@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { EmotionType } from '../types';
 
 // Backend API base URL configurable via env; defaults to local server
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || (window as any)?.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || (window as any)?.VITE_API_BASE || '';
 
 interface AIResponse {
   message: string;
