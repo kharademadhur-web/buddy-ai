@@ -95,7 +95,12 @@ export default function ReceptionAppointmentsScreen({ navigation }: Props) {
             <View style={styles.cardActions}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => navigation.navigate("ReceptionCheckIn", { appointmentId: item.id })}
+                onPress={() =>
+                  navigation.navigate("ReceptionCheckIn", {
+                    appointmentId: item.id,
+                    patientId: item.patient_id,
+                  })
+                }
               >
                 <Text style={styles.secondaryBtnText}>Check-in</Text>
               </Pressable>

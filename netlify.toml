@@ -1,7 +1,11 @@
 [build]
-command = "npm run build:client"
+command = "pnpm run build:client"
 functions = "netlify/functions"
 publish = "dist/spa"
+
+# Vite 7 expects Node ^20.19 or >=22.12
+[build.environment]
+NODE_VERSION = "22"
 
 
 [functions]

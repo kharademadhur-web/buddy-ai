@@ -7,6 +7,16 @@ import { requireRole } from "../middleware/rbac.middleware";
 
 const router = Router();
 
+const vitalsSchema = z.object({
+  bpSystolic: z.number().int().optional(),
+  bpDiastolic: z.number().int().optional(),
+  heartRate: z.number().int().optional(),
+  temperatureC: z.number().optional(),
+  weightKg: z.number().optional(),
+  spo2: z.number().int().optional(),
+  notes: z.string().optional(),
+});
+
 const createSchema = z.object({
   clinicId: z.string().uuid(),
   name: z.string().min(1),
@@ -121,6 +131,83 @@ router.get(
 
     if (error || !data) return res.status(404).json({ error: "Patient not found" });
     return res.json({ success: true, patient: data });
+  }
+);
+
+/**
+ * POST /api/patients/:id/vitals
+ * Structured vitals row (reception/doctor; RLS enforces receptionist patient scope).
+ */
+router.post(
+  "/:id/vitals",
+  authMiddleware,
+  requireRole("receptionist", "doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const parsed = vitalsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const { data, error } = await supabase
+      .from("patient_vitals")
+      .insert({
+        patient_id: req.params.id,
+        clinic_id: clinicId,
+        recorded_by: req.user?.userId ?? null,
+        bp_systolic: parsed.data.bpSystolic ?? null,
+        bp_diastolic: parsed.data.bpDiastolic ?? null,
+        heart_rate: parsed.data.heartRate ?? null,
+        temperature_c: parsed.data.temperatureC ?? null,
+        weight_kg: parsed.data.weightKg ?? null,
+        spo2: parsed.data.spo2 ?? null,
+        notes: parsed.data.notes ?? null,
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to save vitals" });
+    return res.status(201).json({ success: true, vitals: data });
+  }
+);
+
+/**
+ * GET /api/patients/:id/vitals?clinicId=
+ */
+router.get(
+  "/:id/vitals",
+  authMiddleware,
+  requireRole("doctor", "receptionist", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const { data, error } = await supabase
+      .from("patient_vitals")
+      .select("*")
+      .eq("clinic_id", clinicId)
+      .eq("patient_id", req.params.id)
+      .order("recorded_at", { ascending: false })
+      .limit(20);
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true, vitals: data ?? [] });
   }
 );
 

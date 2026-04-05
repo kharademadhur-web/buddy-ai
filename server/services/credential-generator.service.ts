@@ -104,7 +104,7 @@ Your clinic account has been created successfully!
 User ID: ${user_id}
 Password: ${password}
 
-Login URL: https://admin.estrellx.shop/login
+Login URL: ${(process.env.ADMIN_URL || "https://admin.estrellx.shop").replace(/\/+$/, "")}/login
 
 ⚠️  IMPORTANT:
 - Change your password immediately after first login

@@ -3,6 +3,10 @@ import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
+import {
+  fetchAssignedDoctorIds,
+  receptionistMustCoverDoctor,
+} from "../services/receptionist-scope.service";
 
 const router = Router();
 
@@ -34,7 +38,21 @@ router.get(
       .eq("clinic_id", effectiveClinicId)
       .in("status", ["checked_in", "in_consultation"]);
 
-    if (doctorId) q = q.eq("doctor_user_id", doctorId);
+    if (req.user?.role === "receptionist") {
+      const assigned = await fetchAssignedDoctorIds(req.user!);
+      if (assigned.length === 0) {
+        return res.json({ success: true, queue: [] });
+      }
+      if (doctorId) {
+        const gate = receptionistMustCoverDoctor(req.user!, doctorId, assigned);
+        if (gate.ok === false) return res.status(403).json({ error: gate.message });
+        q = q.eq("doctor_user_id", doctorId);
+      } else {
+        q = q.in("doctor_user_id", assigned);
+      }
+    } else if (doctorId) {
+      q = q.eq("doctor_user_id", doctorId);
+    }
 
     const { data, error } = await q.order("appointment_time", { ascending: true });
     if (error) return res.status(500).json({ error: error.message });

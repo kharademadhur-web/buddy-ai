@@ -3,8 +3,11 @@ import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
+import { fetchAssignedDoctorIds } from "../services/receptionist-scope.service";
+import SupabaseStorageService from "../services/supabase-storage.service";
 
 const router = Router();
+const CLINIC_ASSETS_BUCKET = "clinic-assets";
 
 /**
  * GET /api/staff/doctors
@@ -26,15 +29,86 @@ router.get(
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
 
-    const { data, error } = await supabase
+    let q = supabase
       .from("users")
       .select("id, user_id, name, role, clinic_id")
       .eq("clinic_id", clinicId)
       .in("role", ["doctor", "independent"])
       .order("name", { ascending: true });
 
+    if (req.user?.role === "receptionist") {
+      const assigned = await fetchAssignedDoctorIds(req.user);
+      if (assigned.length === 0) {
+        return res.json({ success: true, doctors: [] });
+      }
+      q = q.in("id", assigned);
+    }
+
+    const { data, error } = await q;
+
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ success: true, doctors: data ?? [] });
+  }
+);
+
+/**
+ * GET /api/staff/clinic/letterhead-active?clinicId=
+ * Signed URL + field map for mobile/tablet letterhead overlay.
+ */
+router.get(
+  "/clinic/letterhead-active",
+  authMiddleware,
+  requireRole("doctor", "receptionist", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const { data: clinic, error } = await supabase
+      .from("clinics")
+      .select("letterhead_storage_path, letterhead_mime, letterhead_field_map, payment_qr_storage_path")
+      .eq("id", clinicId)
+      .single();
+
+    if (error || !clinic) return res.status(404).json({ error: "Clinic not found" });
+
+    let letterheadSignedUrl: string | null = null;
+    let paymentQrSignedUrl: string | null = null;
+    try {
+      if (clinic.letterhead_storage_path) {
+        letterheadSignedUrl = await SupabaseStorageService.getSignedUrl(
+          CLINIC_ASSETS_BUCKET,
+          clinic.letterhead_storage_path,
+          3600
+        );
+      }
+      if (clinic.payment_qr_storage_path) {
+        paymentQrSignedUrl = await SupabaseStorageService.getSignedUrl(
+          CLINIC_ASSETS_BUCKET,
+          clinic.payment_qr_storage_path,
+          3600
+        );
+      }
+    } catch {
+      /* bucket missing or path invalid */
+    }
+
+    return res.json({
+      success: true,
+      letterhead: {
+        signedUrl: letterheadSignedUrl,
+        mime: clinic.letterhead_mime,
+        fieldMap: clinic.letterhead_field_map ?? {},
+      },
+      paymentQrSignedUrl,
+    });
   }
 );
 

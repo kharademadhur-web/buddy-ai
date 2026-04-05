@@ -67,7 +67,7 @@ export default function AdminUsers() {
   };
 
   const fetchUsers = async () => {
-    const res = await fetch("/api/admin/users", { headers });
+    const res = await apiFetch("/api/admin/users", { headers });
     const json = await res.json();
     if (!res.ok || !json.success) throw new Error(json.error || "Failed to load users");
     setUsers(json.users || []);

@@ -1,11 +1,26 @@
 import { Router, Request, Response } from "express";
+import multer from "multer";
 import { getSupabaseClient } from "../config/supabase";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireSuperAdmin, requireAdmin } from "../middleware/rbac.middleware";
 import { asyncHandler, ValidationError, ConflictError, ForbiddenError } from "../middleware/error-handler.middleware";
 import { generateClinicCode } from "../services/user-id-generator.service";
+import SupabaseStorageService from "../services/supabase-storage.service";
 
 const router = Router();
+
+const CLINIC_ASSETS_BUCKET = "clinic-assets";
+const uploadAsset = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+});
+
+async function ensureClinicAssetsBucket() {
+  const supabase = getSupabaseClient();
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if ((buckets || []).some((b) => b.name === CLINIC_ASSETS_BUCKET)) return;
+  await supabase.storage.createBucket(CLINIC_ASSETS_BUCKET, { public: false });
+}
 
 /**
  * POST /api/admin/clinics
@@ -184,7 +199,19 @@ router.put(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { clinicId } = req.params;
-    const { name, address, phone, email, subscription_status } = req.body;
+    const {
+      name,
+      address,
+      phone,
+      email,
+      subscription_status,
+      max_doctors,
+      max_receptionists,
+      letterhead_storage_path,
+      letterhead_mime,
+      letterhead_field_map,
+      payment_qr_storage_path,
+    } = req.body as Record<string, unknown>;
 
     if (req.user?.role === "clinic-admin") {
       if (!req.user.clinicId || req.user.clinicId !== clinicId) {
@@ -203,6 +230,14 @@ router.put(
     if (email !== undefined) patch.email = email;
     if (req.user?.role === "super-admin" && subscription_status !== undefined) {
       patch.subscription_status = subscription_status;
+    }
+    if (req.user?.role === "super-admin") {
+      if (max_doctors !== undefined) patch.max_doctors = max_doctors;
+      if (max_receptionists !== undefined) patch.max_receptionists = max_receptionists;
+      if (letterhead_storage_path !== undefined) patch.letterhead_storage_path = letterhead_storage_path;
+      if (letterhead_mime !== undefined) patch.letterhead_mime = letterhead_mime;
+      if (letterhead_field_map !== undefined) patch.letterhead_field_map = letterhead_field_map;
+      if (payment_qr_storage_path !== undefined) patch.payment_qr_storage_path = payment_qr_storage_path;
     }
 
     const { data: clinic, error } = await supabase
@@ -360,6 +395,140 @@ router.get(
       success: true,
       stats,
     });
+  })
+);
+
+/**
+ * POST /api/admin/clinics/:clinicId/clinic-asset
+ * Multipart: kind=letterhead|payment_qr, file=...
+ */
+router.post(
+  "/:clinicId/clinic-asset",
+  authMiddleware,
+  requireAdmin,
+  uploadAsset.single("file"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { clinicId } = req.params;
+    const kind = String(req.body?.kind || "").trim() as "letterhead" | "payment_qr";
+    const file = req.file;
+
+    if (req.user?.role === "clinic-admin" && req.user.clinicId !== clinicId) {
+      throw new ForbiddenError("You can only update your own clinic");
+    }
+    if (!file) throw new ValidationError("file is required");
+    if (kind !== "letterhead" && kind !== "payment_qr") {
+      throw new ValidationError("kind must be letterhead or payment_qr");
+    }
+
+    await ensureClinicAssetsBucket();
+    const uploaded = await SupabaseStorageService.uploadDocument({
+      bucket: CLINIC_ASSETS_BUCKET,
+      fileName: file.originalname,
+      file: file.buffer,
+      contentType: file.mimetype,
+      prefix: `${clinicId}/${kind}`,
+    });
+
+    const supabase = getSupabaseClient();
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (kind === "letterhead") {
+      patch.letterhead_storage_path = uploaded.path;
+      patch.letterhead_mime = file.mimetype;
+    } else {
+      patch.payment_qr_storage_path = uploaded.path;
+    }
+
+    const { data: clinic, error } = await supabase
+      .from("clinics")
+      .update(patch)
+      .eq("id", clinicId)
+      .select()
+      .single();
+
+    if (error || !clinic) {
+      throw new Error(`Failed to update clinic asset: ${error?.message}`);
+    }
+
+    res.json({
+      success: true,
+      clinic,
+      upload: { path: uploaded.path, signedUrl: uploaded.url },
+    });
+  })
+);
+
+/**
+ * GET /api/admin/clinics/:clinicId/receptionist-assignments
+ */
+router.get(
+  "/:clinicId/receptionist-assignments",
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { clinicId } = req.params;
+    if (req.user?.role === "clinic-admin" && req.user.clinicId !== clinicId) {
+      throw new ForbiddenError("Access denied");
+    }
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("receptionist_doctor_assignments")
+      .select("receptionist_user_id, doctor_user_id")
+      .eq("clinic_id", clinicId);
+    if (error) throw new Error(error.message);
+    res.json({ success: true, assignments: data ?? [] });
+  })
+);
+
+/**
+ * PUT /api/admin/clinics/:clinicId/receptionist-assignments
+ * Body: { rows: { receptionist_user_id, doctor_user_id }[] } — replaces all rows for this clinic.
+ */
+router.put(
+  "/:clinicId/receptionist-assignments",
+  authMiddleware,
+  requireSuperAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { clinicId } = req.params;
+    const rows = (req.body as { rows?: Array<{ receptionist_user_id: string; doctor_user_id: string }> })
+      ?.rows;
+    if (!Array.isArray(rows)) throw new ValidationError("rows array is required");
+
+    const supabase = getSupabaseClient();
+
+    const { data: usersInClinic } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("clinic_id", clinicId);
+    const idSet = new Set((usersInClinic ?? []).map((u) => u.id));
+    const receptionists = new Set(
+      (usersInClinic ?? []).filter((u) => u.role === "receptionist").map((u) => u.id)
+    );
+    const doctors = new Set(
+      (usersInClinic ?? []).filter((u) => u.role === "doctor" || u.role === "independent").map((u) => u.id)
+    );
+
+    for (const r of rows) {
+      if (!receptionists.has(r.receptionist_user_id) || !doctors.has(r.doctor_user_id)) {
+        throw new ValidationError("Invalid receptionist or doctor for this clinic");
+      }
+      if (!idSet.has(r.receptionist_user_id) || !idSet.has(r.doctor_user_id)) {
+        throw new ValidationError("Invalid user id");
+      }
+    }
+
+    await supabase.from("receptionist_doctor_assignments").delete().eq("clinic_id", clinicId);
+
+    if (rows.length > 0) {
+      const insertRows = rows.map((r) => ({
+        clinic_id: clinicId,
+        receptionist_user_id: r.receptionist_user_id,
+        doctor_user_id: r.doctor_user_id,
+      }));
+      const { error: insErr } = await supabase.from("receptionist_doctor_assignments").insert(insertRows);
+      if (insErr) throw new Error(insErr.message);
+    }
+
+    res.json({ success: true });
   })
 );
 

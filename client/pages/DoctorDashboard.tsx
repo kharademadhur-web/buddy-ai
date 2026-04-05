@@ -18,7 +18,7 @@ export default function DoctorDashboard() {
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId, {
-    doctorUserId: user?.id,
+    doctorUserId: user?.id ?? null,
   });
 
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -109,12 +109,28 @@ export default function DoctorDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
       <Sidebar role="doctor" />
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Doctor Dashboard</h1>
+      <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
+        <div className="p-4 sm:p-6 lg:p-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">
+            Doctor Dashboard
+          </h1>
+
+          {!clinicId && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
+              No clinic is assigned to this account. Ask your admin to link this user to a clinic in{" "}
+              <span className="font-semibold">Admin → Users</span> so the queue and patients load.
+            </div>
+          )}
+
+          {clinicId && !loading && !error && queue.length === 0 && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-100 text-blue-900 rounded-lg text-sm">
+              No patients in the queue yet. When reception checks in a patient for this clinic, they will
+              appear here.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">
@@ -122,8 +138,8 @@ export default function DoctorDashboard() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+            <div className="lg:col-span-1 order-2 lg:order-1">
               <QueueList
                 rows={rows}
                 onPatientSelect={handleSelectPatient}
@@ -132,7 +148,7 @@ export default function DoctorDashboard() {
               />
             </div>
 
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-4 sm:space-y-6 order-1 lg:order-2">
               <ActivePatientPanel
                 patient={activePatient}
                 doctorName={user?.name}
@@ -141,12 +157,12 @@ export default function DoctorDashboard() {
 
               {activePatient && selectedAppt && (
                 <>
-                  <div className="flex gap-2 border-b border-gray-200 mb-6">
+                  <div className="flex gap-2 border-b border-gray-200 mb-4 sm:mb-6 overflow-x-auto">
                     <button
                       type="button"
                       onClick={() => setActiveTab("prescription")}
                       className={cn(
-                        "px-4 py-3 font-semibold transition-colors border-b-2",
+                        "px-3 sm:px-4 py-2 sm:py-3 font-semibold transition-colors border-b-2 whitespace-nowrap",
                         activeTab === "prescription"
                           ? "text-blue-600 border-blue-600"
                           : "text-gray-600 border-transparent hover:text-gray-900"
@@ -158,7 +174,7 @@ export default function DoctorDashboard() {
                       type="button"
                       onClick={() => setActiveTab("reports")}
                       className={cn(
-                        "px-4 py-3 font-semibold transition-colors border-b-2",
+                        "px-3 sm:px-4 py-2 sm:py-3 font-semibold transition-colors border-b-2 whitespace-nowrap",
                         activeTab === "reports"
                           ? "text-blue-600 border-blue-600"
                           : "text-gray-600 border-transparent hover:text-gray-900"
@@ -171,7 +187,7 @@ export default function DoctorDashboard() {
               )}
 
               {activePatient && selectedAppt && activeTab === "prescription" && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">
                     Clinical Notes & Prescription
                   </h3>

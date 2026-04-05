@@ -119,8 +119,15 @@ router.get(
     if (error) throw new Error(`Failed to fetch doctors: ${error.message}`);
 
     const rows = (data || []).map((d: any) => {
+      const kd = d.kyc_documents;
+      const hasJsonKyc =
+        kd &&
+        typeof kd === "object" &&
+        !Array.isArray(kd) &&
+        Boolean((kd as any).panPath || (kd as any).aadhaarPath || (kd as any).signaturePath);
       const hasDocs = Boolean(
-        d.signature_url ||
+        hasJsonKyc ||
+          d.signature_url ||
           d.signature_path ||
           d.signature ||
           d.aadhaar_url ||
@@ -191,28 +198,37 @@ router.get(
       return null;
     };
 
+    const kd = doctor.kyc_documents;
+    const jsonPaths =
+      kd && typeof kd === "object" && !Array.isArray(kd)
+        ? (kd as { panPath?: string; aadhaarPath?: string; signaturePath?: string })
+        : null;
+
     docs.aadhaar = await maybeSign(
-      pick(doctor, [
-        "aadhaar_url",
-        "aadhaar_document_url",
-        "aadhaar_card_url",
-        "aadhaar_path",
-        "aadhaar",
-        "aadhaar_encrypted",
-      ])
+      jsonPaths?.aadhaarPath ||
+        pick(doctor, [
+          "aadhaar_url",
+          "aadhaar_document_url",
+          "aadhaar_card_url",
+          "aadhaar_path",
+          "aadhaar",
+          "aadhaar_encrypted",
+        ])
     );
     docs.pan = await maybeSign(
-      pick(doctor, [
-        "pan_url",
-        "pan_document_url",
-        "pan_card_url",
-        "pan_path",
-        "pan",
-        "pan_encrypted",
-      ])
+      jsonPaths?.panPath ||
+        pick(doctor, [
+          "pan_url",
+          "pan_document_url",
+          "pan_card_url",
+          "pan_path",
+          "pan",
+          "pan_encrypted",
+        ])
     );
     docs.signature = await maybeSign(
-      pick(doctor, ["signature_url", "signature_document_url", "signature_path", "signature"])
+      jsonPaths?.signaturePath ||
+        pick(doctor, ["signature_url", "signature_document_url", "signature_path", "signature"])
     );
 
     res.json({

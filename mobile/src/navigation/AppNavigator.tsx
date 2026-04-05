@@ -21,7 +21,7 @@ export type RootStackParamList = {
   IndependentHome: undefined;
   ReceptionAppointments: undefined;
   ReceptionNewAppointment: undefined;
-  ReceptionCheckIn: { appointmentId: string };
+  ReceptionCheckIn: { appointmentId: string; patientId: string };
   ReceptionBilling: { appointmentId: string; patientId: string };
   DoctorQueue: undefined;
   DoctorConsultation: { appointmentId: string; patientId: string };

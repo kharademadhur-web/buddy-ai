@@ -20,8 +20,28 @@ const CLINIC_ID = process.env.CLINIC_ID || "";
 const PATIENT_ID = process.env.PATIENT_ID || "";
 const DOCTOR_USER_ID = process.env.DOCTOR_USER_ID || "";
 
-function requireEnv(name: string, value: string) {
-  if (!value) throw new Error(`Missing env ${name}`);
+const REQUIRED_ENV: Array<{ name: string; value: string }> = [
+  { name: "ACCESS_TOKEN", value: ACCESS_TOKEN },
+  { name: "CLINIC_ID", value: CLINIC_ID },
+  { name: "PATIENT_ID", value: PATIENT_ID },
+  { name: "DOCTOR_USER_ID", value: DOCTOR_USER_ID },
+];
+
+function assertEnvConfigured(): void {
+  const missing = REQUIRED_ENV.filter((e) => !e.value).map((e) => e.name);
+  if (missing.length === 0) return;
+  console.error("Missing required environment variables:", missing.join(", "));
+  console.error(`
+Set them before running (PowerShell example):
+
+  $env:BASE_URL="http://localhost:8080"
+  $env:ACCESS_TOKEN="<JWT from admin login>"
+  $env:CLINIC_ID="<uuid>"
+  $env:PATIENT_ID="<uuid>"
+  $env:DOCTOR_USER_ID="<uuid>"
+  pnpm smoke:workflow
+`);
+  process.exit(2);
 }
 
 async function http<T extends Json>(path: string, init: RequestInit = {}): Promise<T> {
@@ -41,10 +61,7 @@ async function http<T extends Json>(path: string, init: RequestInit = {}): Promi
 }
 
 async function main() {
-  requireEnv("ACCESS_TOKEN", ACCESS_TOKEN);
-  requireEnv("CLINIC_ID", CLINIC_ID);
-  requireEnv("PATIENT_ID", PATIENT_ID);
-  requireEnv("DOCTOR_USER_ID", DOCTOR_USER_ID);
+  assertEnvConfigured();
 
   console.log("1) Create appointment");
   const appt = await http<any>("/api/appointments", {

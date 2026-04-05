@@ -4,10 +4,14 @@ import Constants from "expo-constants";
 const DEFAULT_API_BASE_URL = "http://localhost:8080";
 
 export function getApiBaseUrl() {
-  // For Expo, you usually set this to your LAN IP (e.g. http://192.168.1.10:8080)
-  // or your cloud API domain in production.
+  // Production: set EXPO_PUBLIC_API_URL (see mobile/.env.example), e.g. https://api.estrellx.shop
   const env = process.env.EXPO_PUBLIC_API_URL;
-  if (env) return env;
+  if (env?.trim()) return env.trim().replace(/\/+$/, "");
+
+  const extraUrl = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
+  if (typeof extraUrl === "string" && extraUrl.trim()) return extraUrl.trim().replace(/\/+$/, "");
+
+  // Dev: LAN IP from Expo when testing on a device (localhost = phone itself).
 
   // If running in Expo Go on a physical device, "localhost" points to the phone.
   // Derive the host IP from the Expo hostUri and assume the API is served from the same host on port 8080.

@@ -24,6 +24,7 @@ import realtimeRoutes from "./routes/realtime";
 import uploadsRoutes from "./routes/uploads";
 import patientsV2Routes from "./routes/patients-v2";
 import staffRoutes from "./routes/staff";
+import aiClinicalRoutes from "./routes/ai-clinical";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -82,6 +83,20 @@ export async function createServer() {
     corsOrigins.forEach((o, i) => console.log(`[cors]   ${i + 1}. ${o}`));
   }
 
+  const allowedOriginSet = new Set(corsOrigins);
+  const corsOriginFn = (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void
+  ) => {
+    // React Native / native fetch often omits Origin; curl and server-side calls too.
+    if (!origin) return callback(null, true);
+    if (allowedOriginSet.has(origin)) return callback(null, true);
+    if (process.env.NODE_ENV === "production") {
+      console.warn(`[cors] blocked origin=${origin}`);
+    }
+    callback(null, false);
+  };
+
   // HTTPS redirect before CORS so clients upgrade once, then preflight hits HTTPS (avoids redirect loops).
   if (process.env.NODE_ENV === "production" && process.env.FORCE_HTTPS_REDIRECT === "true") {
     app.use((req, res, next) => {
@@ -99,7 +114,7 @@ export async function createServer() {
 
   app.use(
     cors({
-      origin: corsOrigins.length > 0 ? corsOrigins : defaultCorsOrigins,
+      origin: corsOrigins.length > 0 ? corsOriginFn : true,
       credentials: true,
     })
   );
@@ -154,6 +169,7 @@ export async function createServer() {
   app.use("/api/uploads", uploadsRoutes);
   app.use("/api/patients", patientsV2Routes);
   app.use("/api/staff", staffRoutes);
+  app.use("/api/ai", aiClinicalRoutes);
 
   // =====================
   // Device Approval Routes

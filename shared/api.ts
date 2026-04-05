@@ -61,6 +61,12 @@ export interface AppointmentDTO {
   updated_at: string;
 }
 
+export type ConsultationWorkflowStatus =
+  | "draft_rx"
+  | "submitted_awaiting_payment"
+  | "paid"
+  | "cancelled";
+
 export interface ConsultationDTO {
   id: string;
   clinic_id: string;
@@ -74,6 +80,10 @@ export interface ConsultationDTO {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  workflow_status?: ConsultationWorkflowStatus | null;
+  structured_prescription?: Record<string, unknown> | null;
+  handwriting_strokes?: unknown;
+  payment_notified_at?: string | null;
 }
 
 export interface PrescriptionItemDTO {
@@ -165,6 +175,10 @@ export interface CompleteConsultationRequest {
   diagnosis?: string;
   treatmentPlan?: string;
   notes?: string;
+  handwritingStrokes?: unknown;
+  aiTranscript?: string;
+  aiSummary?: string;
+  recordingConsent?: boolean;
   prescription?: {
     notes?: string;
     followUpDate?: string; // YYYY-MM-DD
@@ -214,7 +228,8 @@ export type RealtimeEventType =
   | "appointment.completed"
   | "consultation.completed"
   | "bill.created"
-  | "bill.paid";
+  | "bill.paid"
+  | "payment.success";
 
 export interface RealtimeEvent<T = unknown> {
   type: RealtimeEventType;

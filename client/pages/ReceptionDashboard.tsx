@@ -5,6 +5,7 @@ import { appointmentToPatient } from "@/lib/queue-ui";
 import Sidebar from "@/components/Sidebar";
 import QueueList, { type QueueRow } from "@/components/QueueList";
 import PatientForm from "@/components/PatientForm";
+import ReceptionPendingBills from "@/components/ReceptionPendingBills";
 import { Users, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,12 +27,18 @@ export default function ReceptionDashboard() {
   const totalCollected = summary?.totalCollected ?? 0;
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
       <Sidebar role="reception" />
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Reception Dashboard</h1>
+      <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
+        <div className="p-4 sm:p-6 lg:p-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Reception Dashboard</h1>
+
+          {!clinicId && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
+              No clinic is assigned to this account. Contact your administrator to attach this user to a clinic.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">
@@ -39,7 +46,7 @@ export default function ReceptionDashboard() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -93,14 +100,18 @@ export default function ReceptionDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+            <div className="space-y-6">
               <PatientForm
                 onSuccess={() => {
                   toast.success("Patient registered and checked in");
                   void refetch();
                   void refetchSummary();
                 }}
+              />
+              <ReceptionPendingBills
+                clinicId={clinicId}
+                onPaid={() => void refetchSummary()}
               />
             </div>
 

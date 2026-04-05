@@ -16,6 +16,10 @@ const completeSchema = z.object({
   diagnosis: z.string().optional(),
   treatmentPlan: z.string().optional(),
   notes: z.string().optional(),
+  handwritingStrokes: z.unknown().optional(),
+  aiTranscript: z.string().optional(),
+  aiSummary: z.string().optional(),
+  recordingConsent: z.boolean().optional(),
   prescription: z
     .object({
       notes: z.string().optional(),
@@ -57,6 +61,39 @@ router.post(
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
 
+    const apptExisting = await supabase
+      .from("appointments")
+      .select("id, clinic_id, doctor_user_id, status, patient_id")
+      .eq("id", parsed.data.appointmentId)
+      .single();
+    if (apptExisting.error || !apptExisting.data) {
+      return res.status(404).json({ error: "Appointment not found" });
+    }
+    const row = apptExisting.data;
+    if (row.clinic_id !== parsed.data.clinicId || row.patient_id !== parsed.data.patientId) {
+      return res.status(400).json({ error: "Appointment does not match clinic or patient" });
+    }
+    if (req.user?.role === "doctor" || req.user?.role === "independent") {
+      if (row.doctor_user_id !== req.user.userId) {
+        return res.status(403).json({ error: "Not assigned to this appointment" });
+      }
+    }
+    if (row.status === "completed") {
+      return res.status(400).json({ error: "Consultation already completed for this visit" });
+    }
+
+    const dupConsult = await supabase
+      .from("consultations")
+      .select("id")
+      .eq("appointment_id", parsed.data.appointmentId)
+      .maybeSingle();
+    if (dupConsult.error) {
+      return res.status(500).json({ error: dupConsult.error.message });
+    }
+    if (dupConsult.data) {
+      return res.status(409).json({ error: "Consultation already exists for this appointment" });
+    }
+
     // Mark appointment as in_consultation first
     const appt = await supabase
       .from("appointments")
@@ -65,6 +102,11 @@ router.post(
       .select("*")
       .single();
     if (appt.error || !appt.data) return res.status(404).json({ error: "Appointment not found" });
+
+    const structuredPrescription =
+      parsed.data.prescription?.items && parsed.data.prescription.items.length > 0
+        ? { items: parsed.data.prescription.items }
+        : null;
 
     // Create consultation
     const consultationRes = await supabase
@@ -79,6 +121,12 @@ router.post(
         notes: parsed.data.notes ?? null,
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
+        workflow_status: "submitted_awaiting_payment",
+        structured_prescription: structuredPrescription,
+        handwriting_strokes: parsed.data.handwritingStrokes ?? null,
+        ai_transcript: parsed.data.aiTranscript ?? null,
+        ai_summary: parsed.data.aiSummary ?? null,
+        recording_consent: parsed.data.recordingConsent ?? false,
       })
       .select("*")
       .single();
@@ -177,6 +225,100 @@ router.get(
 
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ success: true, consultations: data ?? [] });
+  }
+);
+
+const handwritingSchema = z.object({
+  strokes: z.unknown(),
+  handwritingImagePath: z.string().optional().nullable(),
+});
+
+/**
+ * PATCH /api/consultations/:consultationId/handwriting
+ */
+router.patch(
+  "/:consultationId/handwriting",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const parsed = handwritingSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const existing = await supabase
+      .from("consultations")
+      .select("id, clinic_id, doctor_user_id")
+      .eq("id", req.params.consultationId)
+      .single();
+    if (existing.error || !existing.data) return res.status(404).json({ error: "Consultation not found" });
+
+    if (req.user?.role !== "super-admin") {
+      if (existing.data.clinic_id !== req.user?.clinicId) {
+        return res.status(403).json({ error: "Clinic access denied" });
+      }
+      if (existing.data.doctor_user_id !== req.user?.userId) {
+        return res.status(403).json({ error: "Not your consultation" });
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("consultations")
+      .update({
+        handwriting_strokes: parsed.data.strokes as object,
+        handwriting_image_path: parsed.data.handwritingImagePath ?? null,
+      })
+      .eq("id", req.params.consultationId)
+      .select("*")
+      .single();
+
+    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to update" });
+    return res.json({ success: true, consultation: data });
+  }
+);
+
+/**
+ * GET /api/consultations/payment-alerts?clinicId=&since=ISO
+ */
+router.get(
+  "/payment-alerts",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    const since =
+      (req.query as { since?: string }).since ||
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    let q = supabase
+      .from("consultations")
+      .select("id, appointment_id, patient_id, payment_notified_at, workflow_status")
+      .eq("clinic_id", clinicId)
+      .eq("workflow_status", "paid")
+      .not("payment_notified_at", "is", null)
+      .gte("payment_notified_at", since)
+      .order("payment_notified_at", { ascending: false })
+      .limit(30);
+
+    if (req.user?.role === "doctor" || req.user?.role === "independent") {
+      q = q.eq("doctor_user_id", req.user!.userId);
+    }
+
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true, alerts: data ?? [] });
   }
 );
 

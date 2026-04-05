@@ -5,7 +5,7 @@ import { AddReceptionist } from "./onboarding/AddReceptionist";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, getAccessToken } from "@/lib/api-base";
 
 type Step = 1 | 2 | 3;
 
@@ -38,7 +38,11 @@ export default function AdminOnboarding() {
     setIsLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/admin/clinics", {
+      const token = getAccessToken() || tokens?.accessToken || "";
+      if (!token) {
+        throw new Error("You are not logged in. Open Admin Login and sign in as Super Admin, then try again.");
+      }
+      const res = await apiFetch("/api/admin/clinics", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

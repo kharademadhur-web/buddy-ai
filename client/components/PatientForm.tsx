@@ -24,8 +24,12 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
     name: "",
     age: 0,
     phone: "",
+    gender: "" as "" | "male" | "female" | "other",
     symptoms: "",
     feesPaid: 500,
+    bpSystolic: "",
+    bpDiastolic: "",
+    heartRate: "",
   });
 
   useEffect(() => {
@@ -78,6 +82,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
           name: formData.name.trim(),
           phone: formData.phone.trim(),
           dateOfBirth,
+          gender: formData.gender || undefined,
           medicalHistory: formData.symptoms || undefined,
         }),
       });
@@ -85,6 +90,33 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
       if (!pr.ok) throw new Error(pj.error || "Failed to create patient");
       const patientId = pj.patient?.id;
       if (!patientId) throw new Error("Invalid patient response");
+
+      const vitalsBody: Record<string, unknown> = {};
+      if (formData.bpSystolic.trim()) {
+        const n = parseInt(formData.bpSystolic, 10);
+        if (Number.isFinite(n)) vitalsBody.bpSystolic = n;
+      }
+      if (formData.bpDiastolic.trim()) {
+        const n = parseInt(formData.bpDiastolic, 10);
+        if (Number.isFinite(n)) vitalsBody.bpDiastolic = n;
+      }
+      if (formData.heartRate.trim()) {
+        const n = parseInt(formData.heartRate, 10);
+        if (Number.isFinite(n)) vitalsBody.heartRate = n;
+      }
+      if (formData.symptoms.trim()) vitalsBody.notes = `Intake: ${formData.symptoms.trim()}`;
+      if (Object.keys(vitalsBody).length > 0) {
+        const vr = await apiFetch(
+          `/api/patients/${patientId}/vitals?clinicId=${encodeURIComponent(clinicId)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(vitalsBody),
+          }
+        );
+        const vj = await vr.json().catch(() => ({}));
+        if (!vr.ok) throw new Error((vj as { error?: string }).error || "Failed to save vitals");
+      }
 
       const now = new Date().toISOString();
       const ar = await apiFetch("/api/appointments", {
@@ -108,6 +140,20 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chiefComplaint: formData.symptoms || undefined,
+          vitals: {
+            bp_sys: (() => {
+              const n = parseInt(formData.bpSystolic, 10);
+              return formData.bpSystolic.trim() && Number.isFinite(n) ? n : undefined;
+            })(),
+            bp_dia: (() => {
+              const n = parseInt(formData.bpDiastolic, 10);
+              return formData.bpDiastolic.trim() && Number.isFinite(n) ? n : undefined;
+            })(),
+            heart_rate: (() => {
+              const n = parseInt(formData.heartRate, 10);
+              return formData.heartRate.trim() && Number.isFinite(n) ? n : undefined;
+            })(),
+          },
         }),
       });
       const cj = await cr.json();
@@ -127,7 +173,17 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
       const bj = await br.json();
       if (!br.ok) throw new Error(bj.error || "Failed to create bill");
 
-      setFormData({ name: "", age: 0, phone: "", symptoms: "", feesPaid: 500 });
+      setFormData({
+        name: "",
+        age: 0,
+        phone: "",
+        gender: "",
+        symptoms: "",
+        feesPaid: 500,
+        bpSystolic: "",
+        bpDiastolic: "",
+        heartRate: "",
+      });
       onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -206,6 +262,57 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
               placeholder="+91 XXXXX XXXXX"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Gender (optional)</label>
+          <select
+            name="gender"
+            value={formData.gender}
+            onChange={handleChange}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">BP systolic</label>
+            <input
+              type="number"
+              name="bpSystolic"
+              value={formData.bpSystolic}
+              onChange={handleChange}
+              placeholder="e.g. 120"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">BP diastolic</label>
+            <input
+              type="number"
+              name="bpDiastolic"
+              value={formData.bpDiastolic}
+              onChange={handleChange}
+              placeholder="e.g. 80"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Heart rate</label>
+            <input
+              type="number"
+              name="heartRate"
+              value={formData.heartRate}
+              onChange={handleChange}
+              placeholder="bpm"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>

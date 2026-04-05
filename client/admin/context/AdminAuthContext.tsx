@@ -73,10 +73,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
             // Token expired, try to refresh
             const refreshSuccess = await refreshTokenHandler(savedRefreshToken);
             if (!refreshSuccess) {
-              // Refresh failed, clear auth
               clearAuth();
               return;
             }
+            setUser(JSON.parse(savedUser));
           } else if (!isTokenExpired) {
             // Token still valid, restore from storage
             setTokens({
@@ -94,6 +94,23 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initializeAuth();
+  }, []);
+
+  // Keep React token state in sync when apiFetch refreshes the access token
+  useEffect(() => {
+    const onRefreshed = () => {
+      const access = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const exp = sessionStorage.getItem(STORAGE_KEYS.EXPIRY);
+      const refresh = sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      if (!access || !exp) return;
+      setTokens((prev) => ({
+        accessToken: access,
+        refreshToken: prev?.refreshToken || refresh || "",
+        expiresIn: Math.max(0, parseInt(exp, 10) - Date.now()),
+      }));
+    };
+    window.addEventListener("admin-access-token-refreshed", onRefreshed);
+    return () => window.removeEventListener("admin-access-token-refreshed", onRefreshed);
   }, []);
 
   const clearAuth = useCallback(() => {
@@ -183,19 +200,17 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
       const newAccessToken = data.accessToken;
 
-      // Update tokens
       const expiryTime = Date.now() + 15 * 60 * 1000; // 15 minutes
       sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
       sessionStorage.setItem(STORAGE_KEYS.EXPIRY, expiryTime.toString());
 
-      setTokens((prev) =>
-        prev
-          ? {
-              ...prev,
-              accessToken: newAccessToken,
-            }
-          : null
-      );
+      const rt =
+        sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || refreshToken;
+      setTokens({
+        accessToken: newAccessToken,
+        refreshToken: rt,
+        expiresIn: 15 * 60,
+      });
 
       return true;
     } catch (err) {

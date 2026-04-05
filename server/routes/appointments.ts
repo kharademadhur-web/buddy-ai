@@ -5,6 +5,10 @@ import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { realtimeService } from "../services/realtime.service";
+import {
+  fetchAssignedDoctorIds,
+  receptionistMustCoverDoctor,
+} from "../services/receptionist-scope.service";
 import type {
   AppointmentDTO,
   CreateAppointmentRequest,
@@ -33,6 +37,12 @@ router.post(
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
       return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    if (req.user?.role === "receptionist") {
+      const assigned = await fetchAssignedDoctorIds(req.user);
+      const gate = receptionistMustCoverDoctor(req.user, parsed.data.doctorUserId, assigned);
+      if (gate.ok === false) return res.status(403).json({ error: gate.message });
     }
 
     const supabase =
@@ -87,7 +97,21 @@ router.get("/", authMiddleware, requireRole("doctor", "receptionist", "independe
       : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
   let q = supabase.from("appointments").select("*").eq("clinic_id", effectiveClinicId);
 
-  if (doctorId) q = q.eq("doctor_user_id", doctorId);
+  if (req.user?.role === "receptionist") {
+    const assigned = await fetchAssignedDoctorIds(req.user!);
+    if (assigned.length === 0) {
+      return res.json({ success: true, appointments: [] });
+    }
+    if (doctorId) {
+      const gate = receptionistMustCoverDoctor(req.user!, doctorId, assigned);
+      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+      q = q.eq("doctor_user_id", doctorId);
+    } else {
+      q = q.in("doctor_user_id", assigned);
+    }
+  } else if (doctorId) {
+    q = q.eq("doctor_user_id", doctorId);
+  }
 
   // date is YYYY-MM-DD; filter appointment_time within day
   if (date) {
@@ -138,6 +162,11 @@ router.patch(
     ) {
       return res.status(403).json({ error: "Not assigned to this appointment" });
     }
+    if (req.user?.role === "receptionist") {
+      const assigned = await fetchAssignedDoctorIds(req.user);
+      const gate = receptionistMustCoverDoctor(req.user, existing.data.doctor_user_id, assigned);
+      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+    }
 
     const update: Record<string, unknown> = {};
     if (parsed.data.appointmentTime) update.appointment_time = parsed.data.appointmentTime;
@@ -174,10 +203,19 @@ router.post(
       req.user?.role === "super-admin"
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
-    const existing = await supabase.from("appointments").select("clinic_id").eq("id", req.params.id).single();
+    const existing = await supabase
+      .from("appointments")
+      .select("clinic_id, doctor_user_id")
+      .eq("id", req.params.id)
+      .single();
     if (existing.error || !existing.data) return res.status(404).json({ error: "Appointment not found" });
     if (req.user?.role !== "super-admin" && existing.data.clinic_id !== req.user?.clinicId) {
       return res.status(403).json({ error: "Clinic access denied" });
+    }
+    if (req.user?.role === "receptionist") {
+      const assigned = await fetchAssignedDoctorIds(req.user!);
+      const gate = receptionistMustCoverDoctor(req.user!, existing.data.doctor_user_id, assigned);
+      if (gate.ok === false) return res.status(403).json({ error: gate.message });
     }
 
     const { data, error } = await supabase

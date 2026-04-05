@@ -27,6 +27,9 @@ export function prescriptionHtml(params: {
   items: Array<{ name: string; dosage?: string; frequency?: string; duration?: string; quantity?: number }>;
   notes?: string;
   followUpDate?: string;
+  /** Optional HTML block above the title (e.g. letterhead image + handwriting SVG) */
+  topHtml?: string;
+  aiSummary?: string;
 }) {
   const rows = params.items
     .map(
@@ -44,6 +47,7 @@ export function prescriptionHtml(params: {
   return `
   <html>
     <body style="font-family: Arial, sans-serif; padding: 24px;">
+      ${params.topHtml ?? ""}
       <h2 style="margin:0;">${escapeHtml(params.clinicName || "Clinic")}</h2>
       <p style="margin:6px 0 18px 0;color:#444;">Prescription</p>
       <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
@@ -66,6 +70,7 @@ export function prescriptionHtml(params: {
           ${rows}
         </tbody>
       </table>
+      ${params.aiSummary ? `<p style="margin-top:12px;"><b>Visit summary</b>: ${escapeHtml(params.aiSummary)}</p>` : ""}
       ${params.notes ? `<p style="margin-top:14px;"><b>Notes</b>: ${escapeHtml(params.notes)}</p>` : ""}
       ${params.followUpDate ? `<p style="margin-top:6px;"><b>Follow-up</b>: ${escapeHtml(params.followUpDate)}</p>` : ""}
       <p style="margin-top:28px;color:#666;">Signature: ____________________</p>

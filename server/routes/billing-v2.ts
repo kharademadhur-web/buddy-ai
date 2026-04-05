@@ -76,6 +76,58 @@ router.get(
   })
 );
 
+/**
+ * GET /api/billing?clinicId=&paymentStatus=pending&limit=30
+ * List bills for checkout / printing (receptionist RLS applies).
+ */
+router.get(
+  "/",
+  authMiddleware,
+  requireRole("receptionist", "super-admin", "clinic-admin"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { clinicId, paymentStatus, limit } = req.query as {
+      clinicId?: string;
+      paymentStatus?: string;
+      limit?: string;
+    };
+    const effectiveClinicId = clinicId || req.user?.clinicId;
+    if (!effectiveClinicId) {
+      return res.status(400).json({ error: "clinicId is required" });
+    }
+    if (req.user?.role === "clinic-admin") {
+      if (!req.user.clinicId || req.user.clinicId !== effectiveClinicId) {
+        return res.status(403).json({ error: "Clinic access denied" });
+      }
+    } else if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
+      return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    const take = Math.min(Math.max(parseInt(limit || "30", 10) || 30, 1), 100);
+    const supabase =
+      req.user?.role === "super-admin" || req.user?.role === "clinic-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    let q = supabase
+      .from("bills")
+      .select(
+        "id, clinic_id, appointment_id, patient_id, consultation_fee, medicine_cost, total_amount, payment_status, payment_method, paid_at, created_at, patients(name, phone)"
+      )
+      .eq("clinic_id", effectiveClinicId)
+      .order("created_at", { ascending: false })
+      .limit(take);
+
+    if (paymentStatus) {
+      q = q.eq("payment_status", paymentStatus);
+    }
+
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true, bills: data ?? [] });
+  })
+);
+
 const createBillSchema = z.object({
   clinicId: z.string().uuid(),
   appointmentId: z.string().uuid(),
@@ -159,7 +211,11 @@ router.post(
       req.user?.role === "super-admin"
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
-    const existing = await supabase.from("bills").select("clinic_id").eq("id", req.params.id).single();
+    const existing = await supabase
+      .from("bills")
+      .select("clinic_id, appointment_id")
+      .eq("id", req.params.id)
+      .single();
     if (existing.error || !existing.data) return res.status(404).json({ error: "Bill not found" });
     if (req.user?.role !== "super-admin" && existing.data.clinic_id !== req.user?.clinicId) {
       return res.status(403).json({ error: "Clinic access denied" });
@@ -177,6 +233,26 @@ router.post(
       .single();
 
     if (error || !data) return res.status(500).json({ error: error?.message || "Failed to mark paid" });
+
+    let doctorUserId: string | null = null;
+    if (existing.data.appointment_id) {
+      const apptRow = await supabase
+        .from("appointments")
+        .select("doctor_user_id")
+        .eq("id", existing.data.appointment_id)
+        .maybeSingle();
+      doctorUserId = apptRow.data?.doctor_user_id ?? null;
+
+      const paidAt = data.paid_at || new Date().toISOString();
+      // Receptionists may not UPDATE consultations under RLS; service role keeps workflow in sync.
+      await getSupabaseClient()
+        .from("consultations")
+        .update({
+          workflow_status: "paid",
+          payment_notified_at: paidAt,
+        })
+        .eq("appointment_id", existing.data.appointment_id);
+    }
 
     await writeAuditLog({
       action: "bill_paid",
@@ -197,9 +273,24 @@ router.post(
       type: "bill.paid",
       clinicId: data.clinic_id,
       at: new Date().toISOString(),
-      payload: { billId: data.id },
+      payload: {
+        billId: data.id,
+        appointmentId: existing.data.appointment_id,
+        doctorUserId,
+      },
     };
     realtimeService.emit(event);
+
+    realtimeService.emit({
+      type: "payment.success",
+      clinicId: data.clinic_id,
+      at: new Date().toISOString(),
+      payload: {
+        billId: data.id,
+        appointmentId: existing.data.appointment_id,
+        doctorUserId,
+      },
+    });
 
     return res.json({ success: true, bill: data });
   })

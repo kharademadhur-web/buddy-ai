@@ -32,7 +32,18 @@ router.post(
       clinic_code,
       license_number,
       send_credentials_to,
-    } = req.body;
+      assigned_doctor_ids,
+    } = req.body as {
+      name?: string;
+      phone?: string;
+      email?: string;
+      role?: string;
+      clinic_id?: string;
+      clinic_code?: string;
+      license_number?: string;
+      send_credentials_to?: string;
+      assigned_doctor_ids?: string[];
+    };
 
     // Validate required fields
     if (!name || !phone || !role || !clinic_id || !clinic_code) {
@@ -47,14 +58,48 @@ router.post(
       }
     }
 
-    if (!["doctor", "receptionist"].includes(role)) {
+    if (role !== "doctor" && role !== "receptionist") {
       throw new ValidationError("Role must be doctor or receptionist");
     }
+    const staffRole = role as "doctor" | "receptionist";
     if (role === "doctor" && !license_number) {
       throw new ValidationError("license_number is required for doctor");
     }
 
     const supabase = getSupabaseClient();
+
+    const { data: clinicRow } = await supabase
+      .from("clinics")
+      .select("max_doctors, max_receptionists")
+      .eq("id", clinic_id)
+      .single();
+
+    const { count: doctorLikeCount } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("clinic_id", clinic_id)
+      .in("role", ["doctor", "independent"]);
+
+    const { count: receptionistCount } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("clinic_id", clinic_id)
+      .eq("role", "receptionist");
+
+    if (role === "doctor" && clinicRow?.max_doctors != null) {
+      const n = doctorLikeCount ?? 0;
+      if (n >= clinicRow.max_doctors) {
+        throw new ValidationError(`Clinic has reached the maximum of ${clinicRow.max_doctors} doctors`);
+      }
+    }
+    if (role === "receptionist" && clinicRow?.max_receptionists != null) {
+      const n = receptionistCount ?? 0;
+      if (n >= clinicRow.max_receptionists) {
+        throw new ValidationError(
+          `Clinic has reached the maximum of ${clinicRow.max_receptionists} receptionists`
+        );
+      }
+    }
 
     // Check if user with this phone already exists
     const { data: existingUser } = await supabase
@@ -68,10 +113,7 @@ router.post(
     }
 
     // Generate user ID
-    const user_id = await UserIdGeneratorService.generateUserID(
-      clinic_code,
-      role
-    );
+    const user_id = await UserIdGeneratorService.generateUserID(clinic_code, staffRole);
 
     // Generate credentials
     const credentials = await CredentialGeneratorService.generateCredentials(
@@ -86,7 +128,7 @@ router.post(
         name,
         phone,
         email: email || null,
-        role,
+        role: staffRole,
         clinic_id,
         password_hash: credentials.password_hash,
         is_active: true,
@@ -99,10 +141,10 @@ router.post(
     }
 
     // Increment counter after successful user creation
-    await UserIdGeneratorService.incrementUserIdCounter(clinic_code, role);
+    await UserIdGeneratorService.incrementUserIdCounter(clinic_code, staffRole);
 
     // If doctor, create doctor profile
-    if (role === "doctor") {
+    if (staffRole === "doctor") {
       const { error: doctorError } = await supabase.from("doctors").insert({
         user_id: user.id,
         license_number: license_number || null,
@@ -113,10 +155,36 @@ router.post(
         await supabase.from("users").delete().eq("id", user.id);
         throw new Error(`Failed to create doctor profile: ${doctorError.message}`);
       }
+
+      // Link every receptionist in this clinic to the new doctor so intake/queue works
+      // even if receptionists were created before any doctor existed.
+      const { data: receptionistsInClinic } = await supabase
+        .from("users")
+        .select("id")
+        .eq("clinic_id", clinic_id)
+        .eq("role", "receptionist");
+
+      const assignRows = (receptionistsInClinic ?? []).map((r) => ({
+        clinic_id,
+        receptionist_user_id: r.id,
+        doctor_user_id: user.id,
+      }));
+      if (assignRows.length > 0) {
+        const { error: docAssignErr } = await supabase
+          .from("receptionist_doctor_assignments")
+          .upsert(assignRows, {
+            onConflict: "receptionist_user_id,doctor_user_id,clinic_id",
+          });
+        if (docAssignErr) {
+          await supabase.from("doctors").delete().eq("user_id", user.id);
+          await supabase.from("users").delete().eq("id", user.id);
+          throw new Error(`Failed to link receptionists to new doctor: ${docAssignErr.message}`);
+        }
+      }
     }
 
     // If receptionist, create receptionist profile
-    if (role === "receptionist") {
+    if (staffRole === "receptionist") {
       const { error: recError } = await supabase.from("receptionists").insert({
         user_id: user.id,
       });
@@ -127,6 +195,36 @@ router.post(
         throw new Error(
           `Failed to create receptionist profile: ${recError.message}`
         );
+      }
+
+      const { data: clinicDoctors } = await supabase
+        .from("users")
+        .select("id")
+        .eq("clinic_id", clinic_id)
+        .in("role", ["doctor", "independent"]);
+
+      const allDoctorIds = (clinicDoctors ?? []).map((d) => d.id);
+      const targetDoctorIds =
+        Array.isArray(assigned_doctor_ids) && assigned_doctor_ids.length > 0
+          ? assigned_doctor_ids.filter((id) => allDoctorIds.includes(id))
+          : allDoctorIds;
+
+      if (targetDoctorIds.length > 0) {
+        const assignmentRows = targetDoctorIds.map((doctor_user_id) => ({
+          clinic_id,
+          receptionist_user_id: user.id,
+          doctor_user_id,
+        }));
+        const { error: assignErr } = await supabase
+          .from("receptionist_doctor_assignments")
+          .upsert(assignmentRows, {
+            onConflict: "receptionist_user_id,doctor_user_id,clinic_id",
+          });
+        if (assignErr) {
+          await supabase.from("receptionists").delete().eq("user_id", user.id);
+          await supabase.from("users").delete().eq("id", user.id);
+          throw new Error(`Failed to assign doctors to receptionist: ${assignErr.message}`);
+        }
       }
     }
 
@@ -164,7 +262,7 @@ router.post(
       userRole: req.user?.role,
       resourceType: "user",
       resourceId: user.id,
-      changes: { created_user_id: user.id, role, clinic_id },
+      changes: { created_user_id: user.id, role: staffRole, clinic_id },
       ip: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress,
       userAgent: req.headers["user-agent"],
     });
@@ -196,6 +294,7 @@ router.post(
 router.get(
   "/",
   authMiddleware,
+  requireSuperAdminOrClinicAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { clinic_id, role } = req.query;
 
@@ -203,7 +302,7 @@ router.get(
 
     let query = supabase
       .from("users")
-      .select("id, user_id, name, phone, email, role, is_active, created_at");
+      .select("id, user_id, name, phone, email, role, is_active, created_at, clinic_id");
 
     const effectiveClinic =
       req.user?.role === "clinic-admin" ? req.user.clinicId : (clinic_id as string | undefined);
@@ -328,53 +427,110 @@ router.post(
     let updatedProfile: any = null;
 
     if (role === "doctor") {
-      const applied: Record<string, string> = {};
-      const applyDocField = async (fieldKey: string, value: string, candidates: string[]) => {
-        let lastErr: unknown = null;
-        for (const col of candidates) {
-          try {
-            await tryUpdate("doctors", { user_id: userId }, { [col]: value } as any);
-            applied[fieldKey] = col;
-            return;
-          } catch (e) {
-            lastErr = e;
+      /** Prefer kyc_documents JSONB (migration 010) — avoids missing pan_encrypted / pan_url on older DBs */
+      const tryKycDocumentsJson = async (): Promise<boolean> => {
+        const { data: row, error: selErr } = await supabase
+          .from("doctors")
+          .select("kyc_documents")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (selErr) {
+          const m = selErr.message || "";
+          if (m.includes("kyc_documents") || m.includes("schema cache")) {
+            return false;
           }
+          throw new Error(`[doctors] select failed: ${m}`);
         }
-        throw lastErr instanceof Error ? lastErr : new Error("Failed to update doctor document field");
+
+        const prev =
+          row?.kyc_documents && typeof row.kyc_documents === "object" && !Array.isArray(row.kyc_documents)
+            ? (row.kyc_documents as Record<string, string>)
+            : {};
+        const merged: Record<string, string> = { ...prev };
+        if (documents.panPath) merged.panPath = documents.panPath;
+        if (documents.aadhaarPath) merged.aadhaarPath = documents.aadhaarPath;
+        if (documents.signaturePath) merged.signaturePath = documents.signaturePath;
+
+        const { data: updated, error: upErr } = await supabase
+          .from("doctors")
+          .update({
+            kyc_documents: merged,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .select("id")
+          .maybeSingle();
+
+        if (upErr) {
+          const m = upErr.message || "";
+          if (m.includes("kyc_documents") || m.includes("schema cache")) {
+            return false;
+          }
+          throw new Error(`[doctors] update failed: ${m}`);
+        }
+        return Boolean(updated?.id);
       };
 
-      if (documents.panPath) {
-        await applyDocField("pan", documents.panPath, [
-          "pan_url",
-          "pan_document_url",
-          "pan_card_url",
-          "pan_path",
-          "pan",
-          "pan_encrypted",
-        ]);
-      }
+      const jsonOk = await tryKycDocumentsJson();
+      if (jsonOk) {
+        updatedProfile = { user_id: userId, storage: "kyc_documents" };
+      } else {
+        const kycSqlHint =
+          "Run on Supabase (SQL editor): ALTER TABLE doctors ADD COLUMN IF NOT EXISTS kyc_documents JSONB DEFAULT '{}'::jsonb;";
+        try {
+          const applied: Record<string, string> = {};
+          const applyDocField = async (fieldKey: string, value: string, candidates: string[]) => {
+            let lastErr: unknown = null;
+            for (const col of candidates) {
+              try {
+                await tryUpdate("doctors", { user_id: userId }, { [col]: value } as any);
+                applied[fieldKey] = col;
+                return;
+              } catch (e) {
+                lastErr = e;
+              }
+            }
+            throw lastErr instanceof Error ? lastErr : new Error("Failed to update doctor document field");
+          };
 
-      if (documents.aadhaarPath) {
-        await applyDocField("aadhaar", documents.aadhaarPath, [
-          "aadhaar_url",
-          "aadhaar_document_url",
-          "aadhaar_card_url",
-          "aadhaar_path",
-          "aadhaar",
-          "aadhaar_encrypted",
-        ]);
-      }
+          if (documents.panPath) {
+            await applyDocField("pan", documents.panPath, [
+              "pan_encrypted",
+              "pan_url",
+              "pan_document_url",
+              "pan_card_url",
+              "pan_path",
+              "pan",
+            ]);
+          }
 
-      if (documents.signaturePath) {
-        await applyDocField("signature", documents.signaturePath, [
-          "signature_url",
-          "signature_document_url",
-          "signature_path",
-          "signature",
-        ]);
-      }
+          if (documents.aadhaarPath) {
+            await applyDocField("aadhaar", documents.aadhaarPath, [
+              "aadhaar_encrypted",
+              "aadhaar_url",
+              "aadhaar_document_url",
+              "aadhaar_card_url",
+              "aadhaar_path",
+              "aadhaar",
+            ]);
+          }
 
-      updatedProfile = { user_id: userId, applied };
+          if (documents.signaturePath) {
+            await applyDocField("signature", documents.signaturePath, [
+              "signature_url",
+              "signature_document_url",
+              "signature_path",
+              "signature",
+            ]);
+          }
+
+          updatedProfile = { user_id: userId, applied };
+        } catch (e) {
+          const orig = e instanceof Error ? e.message : String(e);
+          throw new Error(`${kycSqlHint} Then redeploy the API. Underlying error: ${orig}`);
+        }
+      }
     }
 
     if (role === "receptionist") {
@@ -554,3 +710,4 @@ router.post(
 );
 
 export default router;
+

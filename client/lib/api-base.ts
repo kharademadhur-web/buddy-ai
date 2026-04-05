@@ -9,8 +9,12 @@ export function apiUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}${p}` : p;
 }
 
+const REFRESH_STORAGE_KEY = "admin_refresh_token";
+const ACCESS_STORAGE_KEY = "admin_access_token";
+const EXPIRY_STORAGE_KEY = "admin_token_expiry";
+
 export function getAccessToken(): string {
-  return sessionStorage.getItem("admin_access_token") || "";
+  return sessionStorage.getItem(ACCESS_STORAGE_KEY) || "";
 }
 
 export function authHeaders(): HeadersInit {
@@ -20,18 +24,62 @@ export function authHeaders(): HeadersInit {
   return h;
 }
 
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Uses refresh token in sessionStorage (same keys as AdminAuthContext) to obtain a new access token.
+ * Deduplicates concurrent refresh calls.
+ */
+async function refreshAccessTokenOnce(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const refresh = sessionStorage.getItem(REFRESH_STORAGE_KEY);
+      if (!refresh) return false;
+      const res = await fetch(apiUrl("/api/auth/refresh"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      const data = (await res.json()) as { success?: boolean; accessToken?: string };
+      if (!res.ok || !data.success || !data.accessToken) return false;
+      sessionStorage.setItem(ACCESS_STORAGE_KEY, data.accessToken);
+      sessionStorage.setItem(EXPIRY_STORAGE_KEY, String(Date.now() + 15 * 60 * 1000));
+      window.dispatchEvent(new Event("admin-access-token-refreshed"));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  const token = getAccessToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (
-    init?.body != null &&
-    typeof init.body === "string" &&
-    !headers.has("Content-Type")
-  ) {
-    headers.set("Content-Type", "application/json");
-  }
-  return fetch(apiUrl(path), { ...init, headers });
+  const attempt = async (isAfterRefresh: boolean): Promise<Response> => {
+    const headers = new Headers(init?.headers);
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (
+      init?.body != null &&
+      typeof init.body === "string" &&
+      !headers.has("Content-Type")
+    ) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const res = await fetch(apiUrl(path), { ...init, headers });
+
+    const hadToken = Boolean(token);
+    if (res.status === 401 && hadToken && !isAfterRefresh) {
+      const ok = await refreshAccessTokenOnce();
+      if (ok) return attempt(true);
+    }
+    return res;
+  };
+
+  return attempt(false);
 }
 
 export function apiErrorMessage(json: unknown): string {
