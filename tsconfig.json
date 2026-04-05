@@ -1,0 +1,91 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Linting */
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "noFallthroughCasesInSwitch": false,
+    "strictNullChecks": false,
+
+    /* Path mapping */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./client/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": [
+    "client/**/*",
+    "server/index.ts",
+    "server/node-build.ts",
+    "server/config/**/*",
+    "server/middleware/error-handler.middleware.ts",
+    "server/middleware/auth-jwt.middleware.ts",
+    "server/middleware/rate-limit.middleware.ts",
+    "server/middleware/rbac.middleware.ts",
+    "server/routes/demo.ts",
+    "server/routes/auth-supabase.ts",
+    "server/routes/clinics-admin.ts",
+    "server/routes/users-admin.ts",
+    "server/routes/analytics-admin.ts",
+    "server/routes/device-approval.ts",
+    "server/routes/kyc-admin.ts",
+    "server/services/supabase-auth.service.ts",
+    "server/services/otp-auth.service.ts",
+    "server/services/user-id-generator.service.ts",
+    "server/services/credential-generator.service.ts",
+    "server/services/device-approval.service.ts",
+    "server/services/supabase-storage.service.ts",
+    "shared/**/*",
+    "vite.config.ts",
+    "vite.config.server.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+
+    // Legacy Mongo/Mongoose leftovers (Supabase is the source of truth)
+    "server/models/**/*",
+    "server/config/database.ts",
+    "server/controllers/**/*",
+
+    // Legacy auth middleware superseded by auth-jwt.middleware.ts
+    "server/middleware/auth.middleware.ts",
+
+    // Legacy routes not mounted by server/index.ts
+    "server/routes/auth.ts",
+    "server/routes/analytics.ts",
+    "server/routes/billing.ts",
+    "server/routes/clinic-access.ts",
+    "server/routes/clinics.ts",
+    "server/routes/consultations.ts",
+    "server/routes/doctors.ts",
+    "server/routes/followups.ts",
+    "server/routes/onboarding.ts",
+    "server/routes/patients.ts",
+    "server/routes/payments.ts",
+    "server/routes/prescriptions.ts",
+    "server/routes/queue.ts",
+    "server/routes/roles.ts",
+    "server/routes/subscriptions.ts",
+    "server/routes/users.ts"
+  ]
+}

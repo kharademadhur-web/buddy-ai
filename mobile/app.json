@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Clinical Assistant",
+    "slug": "clinical-assistant",
+    "version": "0.1.0",
+    "sdkVersion": "53.0.0",
+    "platforms": ["ios", "android"],
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"]
+  }
+}
+
