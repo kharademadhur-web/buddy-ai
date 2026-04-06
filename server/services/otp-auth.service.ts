@@ -10,8 +10,12 @@ function normalizeContact(contact: string, contactType: ContactType): string {
   return trimmed.toLowerCase();
 }
 
+/** Exported for patient intake: match OTP session contact to patient.phone */
+export function normalizePhoneDigits(contact: string): string {
+  return contact.trim().replace(/\D/g, "");
+}
+
 function generateOtpCode(): string {
-  // 6-digit numeric OTP
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
@@ -52,7 +56,6 @@ export class OtpAuthService {
       throw new Error(`Failed to create OTP session: ${error?.message ?? "unknown error"}`);
     }
 
-    // Delivery integration point (SMS/Email). For now we log in dev.
     if (process.env.NODE_ENV !== "production") {
       console.log(`[OTP][DEV] contact=${normalized} type=${contactType} otp=${otp} session=${data.id}`);
     }
@@ -60,7 +63,10 @@ export class OtpAuthService {
     return { sessionId: data.id as string, expiresAt: data.expires_at as string };
   }
 
-  static async verifyOtp(sessionId: string, otp: string) {
+  /**
+   * Validates OTP and marks session verified. Shared by login and patient-phone proof.
+   */
+  static async verifyOtpSessionCode(sessionId: string, otp: string) {
     const supabase = getSupabaseClient();
 
     const { data: session, error } = await supabase
@@ -101,15 +107,33 @@ export class OtpAuthService {
       throw new Error("Invalid OTP");
     }
 
-    // Create (or fetch) a lightweight user record to satisfy UI expectations.
-    // This OTP auth is separate from Super Admin SaaS auth; we map it to role=independent.
+    return session as {
+      id: string;
+      contact: string;
+      contact_type: ContactType;
+      verified_at: string | null;
+    };
+  }
+
+  /** Reception intake: prove phone without issuing login tokens or creating users. */
+  static async verifyPhoneOtpForPatientProof(sessionId: string, otp: string) {
+    const session = await this.verifyOtpSessionCode(sessionId, otp);
+    if (session.contact_type !== "phone") {
+      throw new Error("OTP session must be for phone verification");
+    }
+    return { phone: session.contact };
+  }
+
+  static async verifyOtp(sessionId: string, otp: string) {
+    const supabase = getSupabaseClient();
+    const session = await this.verifyOtpSessionCode(sessionId, otp);
+
     const contactType: ContactType = session.contact_type;
     const contact: string = session.contact;
 
     const email = contactType === "email" ? contact : null;
     const phone = contactType === "phone" ? contact : null;
 
-    // Try find user by email/phone
     let userQuery = supabase.from("users").select("*");
     userQuery = email ? userQuery.eq("email", email) : userQuery.eq("phone", phone);
     const { data: existingUser } = await userQuery.single();
@@ -117,7 +141,7 @@ export class OtpAuthService {
     let user = existingUser;
     if (!user) {
       const randomPasswordHash = await hashPassword(`otp-${Date.now()}-${Math.random()}`);
-      const user_id = `OTP-IND-${Date.now()}`; // conforms to ^[A-Z0-9]+-[A-Z]+-[0-9]+$
+      const user_id = `OTP-IND-${Date.now()}`;
       const { data: created, error: createError } = await supabase
         .from("users")
         .insert({
@@ -157,7 +181,7 @@ export class OtpAuthService {
         id: user.id,
         contact,
         contactType,
-        role: "doctor", // keep UI compatible (legacy); can be refined later
+        role: "doctor",
         clinicId: user.clinic_id ?? undefined,
         doctorId: undefined,
         name: user.name,

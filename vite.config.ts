@@ -61,9 +61,13 @@ export default defineConfig(({ mode }) => ({
               const app = await createServer();
 
               console.log("[Server] Listening on port 3000...");
-              app.listen(3000, "127.0.0.1", () => {
+              app.listen(3000, "127.0.0.1", async () => {
                 console.log("✓ Express API server running on http://localhost:3000");
                 expressServer = true;
+                const { startFollowUpReminderWorker } = await import(
+                  "./server/services/reminder-worker.service.ts"
+                );
+                startFollowUpReminderWorker();
               });
             } catch (error) {
               console.error("[Server] Startup error:", error instanceof Error ? error.message : error);

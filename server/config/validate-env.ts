@@ -20,14 +20,18 @@ function isPlaceholder(value: string): boolean {
   );
 }
 
-function logMissingAndExit(missingVars: string[]): never {
-  console.error("❌ MISSING REQUIRED ENVIRONMENT VARIABLES:");
-  missingVars.forEach((v) => console.error(`   - ${v}`));
-  console.error("\nPlease set these variables before starting the server.\n");
-  process.exit(1);
+export interface EnvironmentValidationIssues {
+  missing: string[];
+  unsafe: string[];
+  /** True when production has no valid http(s) origin for CORS (same check as startup exit). */
+  productionCorsFatal: boolean;
 }
 
-export function validateEnvironmentVariables(): void {
+/**
+ * Collect validation issues without exiting — used by `pnpm verify:deployment` and tests.
+ * Mirrors `validateEnvironmentVariables()` logic.
+ */
+export function collectEnvironmentValidationIssues(): EnvironmentValidationIssues {
   const requiredStringVars: Record<string, string> = {
     SUPABASE_SERVICE_KEY: "Supabase service role key",
     SUPABASE_JWT_SECRET: "Supabase JWT secret (Dashboard → Settings → API; not the service key)",
@@ -56,6 +60,8 @@ export function validateEnvironmentVariables(): void {
     }
   });
 
+  let productionCorsFatal = false;
+
   if (
     process.env.NODE_ENV === "production" &&
     process.env.CORS_ALLOW_LOCALHOST !== "true"
@@ -76,10 +82,7 @@ export function validateEnvironmentVariables(): void {
       /^https?:\/\//i.test(process.env.MOBILE_APP_URL?.trim() ?? "") ||
       /^https?:\/\//i.test(pub);
     if (!hasProdOrigin) {
-      console.error(
-        "❌ Production CORS: set at least one of CORS_ORIGINS, ADMIN_URL, STAFF_PORTAL_URL, MOBILE_APP_URL, PUBLIC_URL (with http(s) URL), or set CORS_ALLOW_LOCALHOST=true for local testing."
-      );
-      process.exit(1);
+      productionCorsFatal = true;
     }
 
     const corsLine = process.env.CORS_ORIGINS?.trim() ?? "";
@@ -90,13 +93,37 @@ export function validateEnvironmentVariables(): void {
     }
   }
 
-  if (missingVars.length > 0) {
-    logMissingAndExit(missingVars);
+  return {
+    missing: missingVars,
+    unsafe: unsafeVars,
+    productionCorsFatal,
+  };
+}
+
+function logMissingAndExit(missingVars: string[]): never {
+  console.error("❌ MISSING REQUIRED ENVIRONMENT VARIABLES:");
+  missingVars.forEach((v) => console.error(`   - ${v}`));
+  console.error("\nPlease set these variables before starting the server.\n");
+  process.exit(1);
+}
+
+export function validateEnvironmentVariables(): void {
+  const { missing, unsafe, productionCorsFatal } = collectEnvironmentValidationIssues();
+
+  if (productionCorsFatal) {
+    console.error(
+      "❌ Production CORS: set at least one of CORS_ORIGINS, ADMIN_URL, STAFF_PORTAL_URL, MOBILE_APP_URL, PUBLIC_URL (with http(s) URL), or set CORS_ALLOW_LOCALHOST=true for local testing."
+    );
+    process.exit(1);
   }
 
-  if (unsafeVars.length > 0) {
+  if (missing.length > 0) {
+    logMissingAndExit(missing);
+  }
+
+  if (unsafe.length > 0) {
     console.error("❌ UNSAFE ENVIRONMENT VARIABLES (placeholder or default values):");
-    unsafeVars.forEach((v) => console.error(`   - ${v}`));
+    unsafe.forEach((v) => console.error(`   - ${v}`));
     console.error("\nPlease set secure values for these variables.\n");
     process.exit(1);
   }

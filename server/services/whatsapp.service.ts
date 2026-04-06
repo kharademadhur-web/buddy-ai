@@ -1,7 +1,8 @@
 /**
- * WhatsApp Service
- * Mock implementation for sending WhatsApp messages
- * Ready for integration with Twilio WhatsApp Business API or Meta Business API
+ * WhatsApp outbound
+ * - Twilio WhatsApp: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (e.g. whatsapp:+14155238886)
+ * - Meta Cloud API: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID (optional WHATSAPP_API_VERSION default v21.0)
+ * - Otherwise: mock (logs only)
  */
 
 interface WhatsAppMessage {
@@ -31,13 +32,63 @@ interface WhatsAppResponse {
  * @param message - Message text to send
  * @returns Promise with response status
  */
+async function sendViaTwilio(toE164: string, body: string): Promise<{ ok: boolean; id?: string; err?: string }> {
+  const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
+  const token = process.env.TWILIO_AUTH_TOKEN?.trim();
+  const from = process.env.TWILIO_WHATSAPP_FROM?.trim();
+  if (!sid || !token || !from) return { ok: false };
+
+  const to = toE164.startsWith("+") ? `whatsapp:${toE164}` : `whatsapp:+${toE164.replace(/\D/g, "")}`;
+  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+  const params = new URLSearchParams({ To: to, From: from, Body: body });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+  const data = (await res.json()) as { sid?: string; message?: string };
+  if (!res.ok) {
+    return { ok: false, err: data.message || `Twilio ${res.status}` };
+  }
+  return { ok: true, id: data.sid };
+}
+
+async function sendViaMetaCloud(toDigits: string, body: string): Promise<{ ok: boolean; id?: string; err?: string }> {
+  const graphToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  const ver = process.env.WHATSAPP_API_VERSION?.trim() || "v21.0";
+  if (!graphToken || !phoneId) return { ok: false };
+
+  const res = await fetch(`https://graph.facebook.com/${ver}/${phoneId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${graphToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: toDigits.replace(/\D/g, ""),
+      type: "text",
+      text: { body: body.slice(0, 4096) },
+    }),
+  });
+  const data = (await res.json()) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
+  if (!res.ok) {
+    return { ok: false, err: data.error?.message || `Meta ${res.status}` };
+  }
+  return { ok: true, id: data.messages?.[0]?.id };
+}
+
 export async function sendWhatsAppMessage(
   phoneNumber: string,
   message: string
 ): Promise<WhatsAppResponse> {
   try {
-    // Validate phone number format
-    if (!isValidPhoneNumber(phoneNumber)) {
+    const e164 = formatPhoneNumberForWhatsApp(phoneNumber);
+    if (!e164 || e164.length < 8) {
       return {
         success: false,
         error: "Invalid phone number format",
@@ -45,27 +96,37 @@ export async function sendWhatsAppMessage(
       };
     }
 
-    // Log the message (mock implementation)
-    console.log("🚀 [WhatsApp Mock] Sending message:");
-    console.log(`   To: ${phoneNumber}`);
-    console.log(`   Message: ${message}`);
-    console.log(`   Timestamp: ${new Date().toISOString()}`);
+    const twilio = await sendViaTwilio(e164, message);
+    if (twilio.ok) {
+      console.log(`[WhatsApp] Twilio sent to ${e164} id=${twilio.id}`);
+      return {
+        success: true,
+        messageId: twilio.id,
+        status: "sent",
+        timestamp: new Date(),
+      };
+    }
 
-    // TODO: Replace with actual Twilio implementation
-    // const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-    // const response = await client.messages.create({
-    //   from: "whatsapp:+1234567890",
-    //   to: `whatsapp:${phoneNumber}`,
-    //   body: message,
-    // });
+    const meta = await sendViaMetaCloud(e164.replace("+", ""), message);
+    if (meta.ok) {
+      console.log(`[WhatsApp] Meta sent to ${e164} id=${meta.id}`);
+      return {
+        success: true,
+        messageId: meta.id,
+        status: "sent",
+        timestamp: new Date(),
+      };
+    }
 
-    // Mock success response
+    console.log("🚀 [WhatsApp Mock] (configure TWILIO_* or WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID)");
+    console.log(`   To: ${e164}`);
+    console.log(`   Message: ${message.slice(0, 200)}${message.length > 200 ? "…" : ""}`);
+
     const messageId = `wh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
     return {
       success: true,
       messageId,
-      status: "sent",
+      status: "mock",
       timestamp: new Date(),
     };
   } catch (error) {
@@ -125,29 +186,7 @@ export async function sendWhatsAppTemplate(
       message = message.replace(`{{${key}}}`, value);
     });
 
-    console.log("🚀 [WhatsApp Mock] Sending templated message:");
-    console.log(`   To: ${phoneNumber}`);
-    console.log(`   Template: ${templateName}`);
-    console.log(`   Message: ${message}`);
-    console.log(`   Timestamp: ${new Date().toISOString()}`);
-
-    // TODO: Replace with actual Twilio template API
-    // const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-    // const response = await client.messages.create({
-    //   from: "whatsapp:+1234567890",
-    //   to: `whatsapp:${phoneNumber}`,
-    //   contentSid: TEMPLATE_ID,
-    //   contentVariables: JSON.stringify(variables),
-    // });
-
-    const messageId = `wh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    return {
-      success: true,
-      messageId,
-      status: "sent",
-      timestamp: new Date(),
-    };
+    return sendWhatsAppMessage(phoneNumber, message);
   } catch (error) {
     console.error("WhatsApp template send error:", error);
     return {

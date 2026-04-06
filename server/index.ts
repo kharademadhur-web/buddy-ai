@@ -25,6 +25,7 @@ import uploadsRoutes from "./routes/uploads";
 import patientsV2Routes from "./routes/patients-v2";
 import staffRoutes from "./routes/staff";
 import aiClinicalRoutes from "./routes/ai-clinical";
+import messagingWhatsappRoutes from "./routes/messaging-whatsapp";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -170,6 +171,7 @@ export async function createServer() {
   app.use("/api/patients", patientsV2Routes);
   app.use("/api/staff", staffRoutes);
   app.use("/api/ai", aiClinicalRoutes);
+  app.use("/api/messaging", messagingWhatsappRoutes);
 
   // =====================
   // Device Approval Routes

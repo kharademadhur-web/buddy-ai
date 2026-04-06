@@ -5,6 +5,8 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { fetchAssignedDoctorIds } from "../services/receptionist-scope.service";
 import SupabaseStorageService from "../services/supabase-storage.service";
+import OtpAuthService from "../services/otp-auth.service";
+import { asyncHandler, ValidationError } from "../middleware/error-handler.middleware";
 
 const router = Router();
 const CLINIC_ASSETS_BUCKET = "clinic-assets";
@@ -110,6 +112,22 @@ router.get(
       paymentQrSignedUrl,
     });
   }
+);
+
+/**
+ * POST /api/staff/verify-patient-phone-otp
+ * Reception proves patient phone via OTP (no login tokens). Use otpSessionId on POST /api/patients.
+ */
+router.post(
+  "/verify-patient-phone-otp",
+  authMiddleware,
+  requireRole("receptionist", "super-admin"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sessionId, otp } = req.body as { sessionId?: string; otp?: string };
+    if (!sessionId || !otp) throw new ValidationError("sessionId and otp are required");
+    const result = await OtpAuthService.verifyPhoneOtpForPatientProof(sessionId, otp);
+    res.json({ success: true, phone: result.phone });
+  })
 );
 
 export default router;

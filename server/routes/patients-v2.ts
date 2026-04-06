@@ -4,6 +4,7 @@ import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
+import { normalizePhoneDigits } from "../services/otp-auth.service";
 
 const router = Router();
 
@@ -27,6 +28,8 @@ const createSchema = z.object({
   medicalHistory: z.string().optional(),
   allergies: z.string().optional(),
   emergencyContact: z.string().optional(),
+  /** If set, must reference an otp_sessions row that is verified for this phone (see POST /api/staff/verify-patient-phone-otp). */
+  otpSessionId: z.string().uuid().optional(),
 });
 
 router.post(
@@ -39,6 +42,24 @@ router.post(
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
       return res.status(403).json({ error: "Clinic access denied" });
+    }
+
+    if (parsed.data.otpSessionId) {
+      const admin = getSupabaseClient();
+      const { data: os, error: oe } = await admin
+        .from("otp_sessions")
+        .select("contact, contact_type, verified_at")
+        .eq("id", parsed.data.otpSessionId)
+        .single();
+      if (oe || !os?.verified_at) {
+        return res.status(400).json({ error: "Invalid or unverified phone OTP session" });
+      }
+      if (os.contact_type !== "phone") {
+        return res.status(400).json({ error: "OTP session must be for phone" });
+      }
+      if (os.contact !== normalizePhoneDigits(parsed.data.phone)) {
+        return res.status(400).json({ error: "Phone does not match verified OTP session" });
+      }
     }
 
     const supabase =

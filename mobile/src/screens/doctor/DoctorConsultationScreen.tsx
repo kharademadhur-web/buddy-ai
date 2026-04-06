@@ -8,6 +8,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -17,10 +18,26 @@ import { getUser } from "../../auth/storage";
 import HandwritingPad, { type StrokePayload, strokesToSvgString } from "../../components/HandwritingPad";
 import { prescriptionHtml, shareHtmlAsPdf } from "../../print/pdf";
 
+/** Mirrors @shared/api LetterheadFieldMap — keep in sync for tablet overlays. */
+type LetterheadFieldMap = Record<
+  string,
+  { xPct: number; yPct: number; wPct?: number; hPct?: number } | undefined
+>;
+
 type Props = NativeStackScreenProps<RootStackParamList, "DoctorConsultation">;
+
+function patientAgeFromDob(dob: string | null | undefined): string {
+  if (!dob) return "—";
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Date.now() - d.getTime();
+  return String(Math.max(0, Math.floor(diff / (365.25 * 24 * 3600 * 1000))));
+}
 
 export default function DoctorConsultationScreen({ route, navigation }: Props) {
   const { appointmentId, patientId } = route.params;
+  const { width } = useWindowDimensions();
+  const tablet = width >= 840;
 
   const [diagnosis, setDiagnosis] = useState("Viral fever");
   const [treatmentPlan, setTreatmentPlan] = useState("Rest + fluids");
@@ -33,7 +50,11 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
   const [medQty, setMedQty] = useState("10");
 
   const [letterheadUrl, setLetterheadUrl] = useState<string | null>(null);
+  const [fieldMap, setFieldMap] = useState<LetterheadFieldMap>({});
   const [patientName, setPatientName] = useState(`Patient ${patientId.slice(0, 8)}`);
+  const [patientPhone, setPatientPhone] = useState("—");
+  const [patientGender, setPatientGender] = useState<string>("");
+  const [patientAge, setPatientAge] = useState<string>("—");
   const [strokes, setStrokes] = useState<StrokePayload>({ version: 1, lines: [] });
 
   const [suggestQ, setSuggestQ] = useState("");
@@ -49,17 +70,23 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
     try {
       const lh = await apiFetch<{
         success: true;
-        letterhead: { signedUrl: string | null };
+        letterhead: { signedUrl: string | null; fieldMap?: LetterheadFieldMap };
       }>(`/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(user.clinic_id)}`);
       setLetterheadUrl(lh.letterhead?.signedUrl ?? null);
+      setFieldMap(lh.letterhead?.fieldMap ?? {});
     } catch {
       setLetterheadUrl(null);
+      setFieldMap({});
     }
     try {
-      const pr = await apiFetch<{ success: true; patient: { name: string } }>(
-        `/api/patients/${patientId}?clinicId=${encodeURIComponent(user.clinic_id)}`
-      );
+      const pr = await apiFetch<{
+        success: true;
+        patient: { name: string; phone: string; gender: string | null; date_of_birth: string | null };
+      }>(`/api/patients/${patientId}?clinicId=${encodeURIComponent(user.clinic_id)}`);
       setPatientName(pr.patient.name);
+      setPatientPhone(pr.patient.phone || "—");
+      setPatientGender(pr.patient.gender || "");
+      setPatientAge(patientAgeFromDob(pr.patient.date_of_birth));
     } catch {
       /* keep fallback */
     }
@@ -174,11 +201,19 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
     await shareHtmlAsPdf({ title: "Prescription", html });
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
-      <Text style={styles.title}>Consultation</Text>
-      <Text style={styles.meta}>Appointment: {appointmentId}</Text>
+  const patientLeft = (
+    <View>
+      <Text style={styles.title}>Patient</Text>
+      <Text style={styles.patientLine}>{patientName}</Text>
+      <Text style={styles.patientMeta}>Age: {patientAge}</Text>
+      <Text style={styles.patientMeta}>Gender: {patientGender || "—"}</Text>
+      <Text style={styles.patientMeta}>Phone: {patientPhone}</Text>
+      <Text style={[styles.meta, { marginTop: 12 }]}>Appt: {appointmentId.slice(0, 8)}…</Text>
+    </View>
+  );
 
+  const letterCenter = (
+    <View>
       <Text style={styles.section}>Letterhead & handwriting</Text>
       <View style={styles.letterWrap}>
         {letterheadUrl ? (
@@ -186,6 +221,33 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
         ) : (
           <Text style={styles.hint}>No letterhead uploaded for this clinic yet.</Text>
         )}
+        {fieldMap.patientName ? (
+          <Text
+            style={[
+              styles.fieldOverlay,
+              { left: `${fieldMap.patientName.xPct}%`, top: `${fieldMap.patientName.yPct}%` },
+            ]}
+          >
+            {patientName}
+          </Text>
+        ) : null}
+        {fieldMap.ageGender ? (
+          <Text
+            style={[
+              styles.fieldOverlay,
+              { left: `${fieldMap.ageGender.xPct}%`, top: `${fieldMap.ageGender.yPct}%` },
+            ]}
+          >
+            {patientAge}y · {patientGender || "—"}
+          </Text>
+        ) : null}
+        {fieldMap.phone ? (
+          <Text
+            style={[styles.fieldOverlay, { left: `${fieldMap.phone.xPct}%`, top: `${fieldMap.phone.yPct}%` }]}
+          >
+            {patientPhone}
+          </Text>
+        ) : null}
         <View style={styles.padOverlay}>
           <HandwritingPad onChange={setStrokes} />
         </View>
@@ -195,7 +257,11 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
       <TextInput value={diagnosis} onChangeText={setDiagnosis} placeholder="Diagnosis" style={styles.input} />
       <TextInput value={treatmentPlan} onChangeText={setTreatmentPlan} placeholder="Treatment plan" style={styles.input} />
       <TextInput value={notes} onChangeText={setNotes} placeholder="Notes" style={styles.input} />
+    </View>
+  );
 
+  const toolsRight = (
+    <View>
       <Text style={styles.section}>Formulary suggest</Text>
       <View style={styles.row}>
         <TextInput
@@ -224,23 +290,23 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
         </Pressable>
       ))}
 
-      <Text style={styles.section}>AI summary (consent-gated)</Text>
+      <Text style={styles.section}>AI summary (optional)</Text>
       <TextInput
         value={transcript}
         onChangeText={setTranscript}
-        placeholder="Paste conversation / exam notes for draft summary"
+        placeholder="Paste transcript / notes"
         style={[styles.input, { minHeight: 72 }]}
         multiline
       />
       <View style={styles.consentRow}>
-        <Text style={styles.consentLabel}>Recording / summary consent</Text>
+        <Text style={styles.consentLabel}>Consent</Text>
         <Switch value={recordingConsent} onValueChange={setRecordingConsent} />
       </View>
       <Pressable
         onPress={() => void runSummary().catch((e) => Alert.alert("Summary failed", String(e.message)))}
         style={styles.btnSecondary}
       >
-        <Text style={styles.btnSecondaryText}>Generate draft summary</Text>
+        <Text style={styles.btnSecondaryText}>Draft summary</Text>
       </Pressable>
       {aiSummaryText ? <Text style={styles.summaryOut}>{aiSummaryText}</Text> : null}
 
@@ -254,16 +320,47 @@ export default function DoctorConsultationScreen({ route, navigation }: Props) {
       <Pressable onPress={() => void complete().catch((e) => Alert.alert("Failed", String(e.message)))} style={styles.btn}>
         <Text style={styles.btnText}>Complete consultation</Text>
       </Pressable>
-
       <View style={{ height: 12 }} />
       <Pressable onPress={() => void shareRx().catch((e) => Alert.alert("Print failed", String(e.message)))} style={styles.btnSecondary}>
-        <Text style={styles.btnSecondaryText}>Share prescription (PDF)</Text>
+        <Text style={styles.btnSecondaryText}>Share PDF</Text>
       </Pressable>
+    </View>
+  );
+
+  if (tablet) {
+    return (
+      <View style={styles.tabletRoot}>
+        <ScrollView style={styles.colLeft} contentContainerStyle={{ paddingBottom: 24 }}>
+          {patientLeft}
+        </ScrollView>
+        <ScrollView style={styles.colCenter} contentContainerStyle={{ paddingBottom: 24 }}>
+          {letterCenter}
+        </ScrollView>
+        <ScrollView style={styles.colRight} contentContainerStyle={{ paddingBottom: 24 }}>
+          {toolsRight}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+      <Text style={styles.title}>Consultation</Text>
+      {patientLeft}
+      {letterCenter}
+      {toolsRight}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  tabletRoot: { flex: 1, flexDirection: "row", backgroundColor: "#0b1220" },
+  colLeft: { width: 260, padding: 12, borderRightWidth: 1, borderRightColor: "#1f2937" },
+  colCenter: { flex: 1, padding: 12, minWidth: 0 },
+  colRight: { width: 300, padding: 12, borderLeftWidth: 1, borderLeftColor: "#1f2937" },
+  patientLine: { color: "white", fontSize: 18, fontWeight: "800", marginBottom: 4 },
+  patientMeta: { color: "#cbd5e1", marginTop: 2 },
+  fieldOverlay: { position: "absolute", color: "#0f172a", fontSize: 11, fontWeight: "700" },
   container: { flex: 1, padding: 16, backgroundColor: "#0b1220" },
   title: { color: "white", fontSize: 22, fontWeight: "900", marginBottom: 6 },
   meta: { color: "#9ca3af", marginBottom: 12 },

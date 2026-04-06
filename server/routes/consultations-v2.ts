@@ -172,6 +172,21 @@ router.post(
       (rxRes.data as any).items = [];
     }
 
+    if (parsed.data.prescription?.followUpDate) {
+      const { error: fuErr } = await supabase.from("followups").insert({
+        clinic_id: parsed.data.clinicId,
+        patient_id: parsed.data.patientId,
+        doctor_user_id: req.user!.userId,
+        source_consultation_id: consultationRes.data.id,
+        due_date: parsed.data.prescription.followUpDate,
+        status: "scheduled",
+        notes: "Follow-up from consultation",
+      });
+      if (fuErr) {
+        console.warn("[followups] insert skipped:", fuErr.message);
+      }
+    }
+
     // Mark appointment completed
     await supabase
       .from("appointments")

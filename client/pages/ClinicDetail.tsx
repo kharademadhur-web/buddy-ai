@@ -16,6 +16,27 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiFetch, apiErrorMessage, apiUrl, getAccessToken } from "@/lib/api-base";
+import type { LetterheadFieldBox, LetterheadFieldMap } from "@shared/api";
+
+const DEFAULT_LETTERHEAD_FIELD_MAP: LetterheadFieldMap = {
+  patientName: { xPct: 8, yPct: 14, wPct: 44, hPct: 6 },
+  ageGender: { xPct: 8, yPct: 22, wPct: 36, hPct: 5 },
+  phone: { xPct: 8, yPct: 29, wPct: 36, hPct: 5 },
+  vitals: { xPct: 55, yPct: 14, wPct: 38, hPct: 12 },
+  prescriptionArea: { xPct: 8, yPct: 38, wPct: 84, hPct: 22 },
+  handwritingArea: { xPct: 8, yPct: 38, wPct: 84, hPct: 35 },
+  aiSummaryArea: { xPct: 8, yPct: 76, wPct: 84, hPct: 14 },
+};
+
+const FIELD_KEYS: Array<{ key: keyof LetterheadFieldMap; label: string }> = [
+  { key: "patientName", label: "Patient name" },
+  { key: "ageGender", label: "Age / gender" },
+  { key: "phone", label: "Phone" },
+  { key: "vitals", label: "Vitals (BP, HR)" },
+  { key: "prescriptionArea", label: "Prescription writing area" },
+  { key: "handwritingArea", label: "Handwriting (stylus) area" },
+  { key: "aiSummaryArea", label: "AI summary area" },
+];
 
 type StaffRow = {
   id: string;
@@ -50,6 +71,7 @@ export default function ClinicDetail() {
   const [maxReceptionists, setMaxReceptionists] = useState("");
   const [assignRows, setAssignRows] = useState<Array<{ receptionist_user_id: string; doctor_user_id: string }>>([]);
   const [workflowMsg, setWorkflowMsg] = useState("");
+  const [fieldMap, setFieldMap] = useState<LetterheadFieldMap>({});
 
   const headers = useMemo(() => {
     const accessToken = tokens?.accessToken || sessionStorage.getItem("admin_access_token") || "";
@@ -72,6 +94,7 @@ export default function ClinicDetail() {
       const c = json.clinic;
       setMaxDoctors(c?.max_doctors != null ? String(c.max_doctors) : "");
       setMaxReceptionists(c?.max_receptionists != null ? String(c.max_receptionists) : "");
+      setFieldMap((c?.letterhead_field_map as LetterheadFieldMap | undefined) || {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load clinic");
     } finally {
@@ -114,6 +137,31 @@ export default function ClinicDetail() {
   useEffect(() => {
     void fetchAssignments();
   }, [fetchAssignments]);
+
+  const patchFieldBox = (key: keyof LetterheadFieldMap, patch: Partial<LetterheadFieldBox>) => {
+    setFieldMap((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || { xPct: 0, yPct: 0 }), ...patch },
+    }));
+  };
+
+  const saveLetterheadFieldMap = async () => {
+    if (!clinicId || !isSuperAdmin) return;
+    setWorkflowMsg("");
+    try {
+      const res = await apiFetch(`/api/admin/clinics/${clinicId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ letterhead_field_map: fieldMap }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to save layout");
+      setClinic(json.clinic);
+      setWorkflowMsg("Letterhead layout mapping saved.");
+    } catch (e) {
+      setWorkflowMsg(e instanceof Error ? e.message : "Failed to save layout");
+    }
+  };
 
   const saveCaps = async () => {
     if (!clinicId || !isSuperAdmin) return;
@@ -359,6 +407,76 @@ export default function ClinicDetail() {
               />
             </label>
           </div>
+          {isSuperAdmin ? (
+            <div className="border-t pt-4 space-y-3">
+              <h3 className="text-base font-semibold text-gray-900">Letterhead layout (fixed positions)</h3>
+              <p className="text-sm text-gray-600">
+                Define overlay regions once per clinic: coordinates are percentages (0–100) of the letterhead width and
+                height. Used by the doctor tablet canvas and PDF generation.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setFieldMap({ ...DEFAULT_LETTERHEAD_FIELD_MAP })}
+              >
+                Apply default template
+              </Button>
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {FIELD_KEYS.map(({ key, label }) => {
+                  const box = fieldMap[key] || { xPct: 0, yPct: 0, wPct: 30, hPct: 8 };
+                  return (
+                    <div key={key} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end border rounded-lg p-3 bg-slate-50/80">
+                      <div className="col-span-2 sm:col-span-1 text-sm font-medium text-gray-800">{label}</div>
+                      <div>
+                        <Label className="text-xs">X %</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={box.xPct}
+                          onChange={(e) => patchFieldBox(key, { xPct: Number(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Y %</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={box.yPct}
+                          onChange={(e) => patchFieldBox(key, { yPct: Number(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">W %</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={box.wPct ?? ""}
+                          onChange={(e) =>
+                            patchFieldBox(key, { wPct: e.target.value === "" ? undefined : Number(e.target.value) })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">H %</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={box.hPct ?? ""}
+                          onChange={(e) =>
+                            patchFieldBox(key, { hPct: e.target.value === "" ? undefined : Number(e.target.value) })
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <Button type="button" variant="secondary" onClick={() => void saveLetterheadFieldMap()}>
+                Save letterhead layout
+              </Button>
+            </div>
+          ) : null}
           {isSuperAdmin ? (
             <div className="grid gap-3 sm:grid-cols-2 border-t pt-4">
               <div>

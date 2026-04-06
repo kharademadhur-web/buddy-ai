@@ -4,6 +4,7 @@ import { getSupabaseClient } from "../config/supabase";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { asyncHandler } from "../middleware/error-handler.middleware";
+import { grokConsultationSummary, isXaiConfigured } from "../services/xai-grok.service";
 
 const router = Router();
 
@@ -93,6 +94,25 @@ router.post(
     }
 
     const text = parsed.data.transcript.trim();
+
+    if (isXaiConfigured()) {
+      try {
+        const g = await grokConsultationSummary(text);
+        return res.json({
+          success: true,
+          summary: {
+            chiefComplaint: g.chiefComplaint,
+            history: g.history,
+            plan: g.plan,
+            disclaimer: "Draft for clinician review only — Grok/xAI; not a diagnosis.",
+            provider: "xai",
+          },
+        });
+      } catch (e) {
+        console.warn("[ai] Grok failed, falling back to local stub:", e);
+      }
+    }
+
     const sentences = text.split(/[.!?]\s+/).filter(Boolean);
     const chief = sentences[0] ?? text.slice(0, 200);
     const plan = sentences.slice(1, 3).join(". ") || "Review findings and adjust plan clinically.";
@@ -104,6 +124,7 @@ router.post(
         history: text.slice(0, 800),
         plan,
         disclaimer: "Draft for clinician review only — not a medical diagnosis.",
+        provider: "stub",
       },
     });
   })

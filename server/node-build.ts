@@ -3,6 +3,7 @@ import { createServer, registerAppErrorHandlers } from "./index";
 import express from "express";
 import { validateEnvironmentVariables } from "./config/validate-env";
 import { verifySupabaseOnStartup } from "./config/supabase-health";
+import { startFollowUpReminderWorker } from "./services/reminder-worker.service";
 
 validateEnvironmentVariables();
 
@@ -63,6 +64,7 @@ async function startServer() {
     console.log(`[startup] Server ready — ${host}:${port}`);
     console.log(`[startup] SPA static root: ${distPath}`);
     console.log(`[startup] PUBLIC_URL (for docs/links): ${publicUrl}`);
+    startFollowUpReminderWorker();
   });
 }
 

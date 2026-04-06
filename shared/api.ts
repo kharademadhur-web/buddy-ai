@@ -28,6 +28,24 @@ export type AppointmentStatus =
 export type PaymentStatus = "pending" | "paid" | "failed" | "cancelled";
 export type PaymentMethod = "cash" | "upi" | "card" | "other";
 
+/** Percent-based overlay boxes on clinic letterhead (0–100). Defined at onboarding; used by tablet + PDF. */
+export interface LetterheadFieldBox {
+  xPct: number;
+  yPct: number;
+  wPct?: number;
+  hPct?: number;
+}
+
+export interface LetterheadFieldMap {
+  patientName?: LetterheadFieldBox;
+  ageGender?: LetterheadFieldBox;
+  phone?: LetterheadFieldBox;
+  vitals?: LetterheadFieldBox;
+  prescriptionArea?: LetterheadFieldBox;
+  handwritingArea?: LetterheadFieldBox;
+  aiSummaryArea?: LetterheadFieldBox;
+}
+
 export interface PatientDTO {
   id: string;
   clinic_id: string;
