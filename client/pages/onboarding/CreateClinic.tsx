@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, Upload, FileImage } from "lucide-react";
 
 interface CreateClinicProps {
   onNext: (data: any) => void;
@@ -20,9 +20,11 @@ export function CreateClinic({
     address: "",
     phone: "",
     email: "",
+    letterheadFile: null as File | null,
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [letterheadPreview, setLetterheadPreview] = useState<string | null>(null);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -50,30 +52,28 @@ export function CreateClinic({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    // Clear error for this field
+    setFormData((prev) => ({ ...prev, [name]: value }));
     if (formErrors[name]) {
-      setFormErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
+      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const handleLetterheadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setFormData((prev) => ({ ...prev, letterheadFile: file }));
+    if (file && file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file);
+      setLetterheadPreview(url);
+    } else {
+      setLetterheadPreview(null);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (validateForm()) {
       onNext(formData);
     }
-  };
-
-  // Development helper: Try test endpoint
-  const handleTestSubmit = () => {
-    onNext(formData);
   };
 
   return (
@@ -164,6 +164,55 @@ export function CreateClinic({
           {formErrors.address && (
             <p className="text-sm text-red-600 mt-1">{formErrors.address}</p>
           )}
+        </div>
+
+        {/* Letterhead Upload */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileImage className="w-5 h-5 text-blue-600" />
+            <p className="text-sm font-semibold text-gray-800">Clinic Letterhead</p>
+          </div>
+          <p className="text-xs text-gray-600">
+            Upload your clinic's printed letterhead (JPG/PNG). This will appear as the background on every
+            patient prescription the receptionist fills and the doctor views.
+          </p>
+
+          <label
+            htmlFor="letterheadFile"
+            className={`flex items-center gap-3 cursor-pointer rounded-lg border-2 border-dashed p-4 transition-colors ${
+              formData.letterheadFile
+                ? "border-green-400 bg-green-50"
+                : "border-blue-300 hover:border-blue-400 bg-white"
+            }`}
+          >
+            <Upload className={`w-5 h-5 ${formData.letterheadFile ? "text-green-600" : "text-blue-500"}`} />
+            <div className="flex-1 min-w-0">
+              {formData.letterheadFile ? (
+                <p className="text-sm font-medium text-green-700 truncate">{formData.letterheadFile.name}</p>
+              ) : (
+                <p className="text-sm text-gray-500">Click to upload letterhead image (JPG/PNG)</p>
+              )}
+            </div>
+            <Input
+              id="letterheadFile"
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              onChange={handleLetterheadChange}
+              disabled={isLoading}
+              className="sr-only"
+            />
+          </label>
+
+          {letterheadPreview && (
+            <div className="rounded-lg overflow-hidden border border-gray-200 max-h-48">
+              <img
+                src={letterheadPreview}
+                alt="Letterhead preview"
+                className="w-full object-contain max-h-48"
+              />
+            </div>
+          )}
+          <p className="text-xs text-gray-500">Optional — can be added later from clinic settings.</p>
         </div>
 
         <Button

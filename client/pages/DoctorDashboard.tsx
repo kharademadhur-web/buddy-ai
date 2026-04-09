@@ -1,8 +1,20 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useAdminAuth } from "@/context/AdminAuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import type { HandwritingStrokeBundle } from "@/components/PrescriptionCanvas";
 import Sidebar from "@/components/Sidebar";
 import QueueList, { type QueueRow } from "@/components/QueueList";
 import ActivePatientPanel from "@/components/ActivePatientPanel";
@@ -10,7 +22,7 @@ import PrescriptionCanvas from "@/components/PrescriptionCanvas";
 import MedicineTable from "@/components/MedicineTable";
 import ReportsTab from "@/components/ReportsTab";
 import { Medicine } from "@/context/ClinicContext";
-import { FileText, Download, Printer, CheckCircle2, Loader2 } from "lucide-react";
+import { FileText, Download, Printer, CheckCircle2, Loader2, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -23,9 +35,95 @@ export default function DoctorDashboard() {
 
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
   const [prescriptionNotes, setPrescriptionNotes] = useState("");
+  const [handwritingStrokes, setHandwritingStrokes] = useState<HandwritingStrokeBundle | null>(null);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [activeTab, setActiveTab] = useState<"prescription" | "reports">("prescription");
   const [completing, setCompleting] = useState(false);
+
+  // Clinic letterhead for patient panel
+  const [clinicLetterhead, setClinicLetterhead] = useState<import("@/context/ClinicContext").Letterhead | null>(null);
+  useEffect(() => {
+    if (!clinicId) return;
+    apiFetch(`/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(clinicId)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.letterhead?.signedUrl) {
+          setClinicLetterhead({
+            id: clinicId,
+            name: j.clinic?.name ?? "Clinic",
+            templateUrl: j.letterhead.signedUrl,
+            clinicName: j.clinic?.name ?? "Clinic",
+            clinicAddress: j.clinic?.address ?? "",
+            clinicPhone: j.clinic?.phone ?? "",
+            createdAt: new Date(),
+          });
+        }
+      })
+      .catch(() => {});
+  }, [clinicId]);
+
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwSessionId, setPwSessionId] = useState<string | null>(null);
+  const [pwOtp, setPwOtp] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwNew2, setPwNew2] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState("");
+
+  const requestPasswordOtp = async () => {
+    setPwError("");
+    setPwLoading(true);
+    try {
+      const res = await apiFetch("/api/auth/password-change/request-otp", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok || !j.success) throw new Error(apiErrorMessage(j) || "Failed to send OTP");
+      setPwSessionId(j.sessionId);
+      toast.success("OTP sent to your registered phone");
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const completePasswordChange = async () => {
+    if (!pwSessionId) {
+      setPwError("Request OTP first");
+      return;
+    }
+    if (pwNew.length < 8) {
+      setPwError("Password must be at least 8 characters");
+      return;
+    }
+    if (pwNew !== pwNew2) {
+      setPwError("Passwords do not match");
+      return;
+    }
+    setPwError("");
+    setPwLoading(true);
+    try {
+      const res = await apiFetch("/api/auth/password-change/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId: pwSessionId,
+          otp: pwOtp.trim(),
+          newPassword: pwNew,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) throw new Error(apiErrorMessage(j) || "Failed to update");
+      toast.success("Password updated");
+      setPwOpen(false);
+      setPwSessionId(null);
+      setPwOtp("");
+      setPwNew("");
+      setPwNew2("");
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   const rows: QueueRow[] = useMemo(() => {
     return queue.map((appt, i) => ({
@@ -49,6 +147,7 @@ export default function DoctorDashboard() {
   const handleSelectPatient = async (patientId: string, appointmentId: string) => {
     setSelectedAppointmentId(appointmentId);
     setPrescriptionNotes("");
+    setHandwritingStrokes(null);
     setMedicines([]);
     const appt = queue.find((a) => a.id === appointmentId);
     if (appt?.status === "checked_in" && clinicId) {
@@ -76,6 +175,9 @@ export default function DoctorDashboard() {
         diagnosis: prescriptionNotes || undefined,
         notes: prescriptionNotes || undefined,
       };
+      if (handwritingStrokes && handwritingStrokes.lines.length > 0) {
+        body.handwritingStrokes = handwritingStrokes;
+      }
       if (medicines.length > 0) {
         body.prescription = {
           notes: prescriptionNotes || undefined,
@@ -94,11 +196,12 @@ export default function DoctorDashboard() {
         body: JSON.stringify(body),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Failed to complete consultation");
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Failed to complete consultation");
 
       toast.success("Consultation completed");
       setSelectedAppointmentId(null);
       setPrescriptionNotes("");
+      setHandwritingStrokes(null);
       setMedicines([]);
       await refetch();
     } catch (e) {
@@ -114,9 +217,75 @@ export default function DoctorDashboard() {
 
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">
-            Doctor Dashboard
-          </h1>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
+            <Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => setPwOpen(true)}>
+              <KeyRound className="h-4 w-4" />
+              Change password
+            </Button>
+          </div>
+
+          <Dialog open={pwOpen} onOpenChange={setPwOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Change password</DialogTitle>
+                <DialogDescription>
+                  We will send a one-time code to your registered phone. Then enter the code and your new
+                  password.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                {pwError ? <p className="text-sm text-red-600">{pwError}</p> : null}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => void requestPasswordOtp()}
+                  disabled={pwLoading}
+                >
+                  {pwLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Send OTP to phone
+                </Button>
+                <div className="space-y-1">
+                  <Label htmlFor="pw-otp">OTP</Label>
+                  <Input
+                    id="pw-otp"
+                    value={pwOtp}
+                    onChange={(e) => setPwOtp(e.target.value)}
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="pw-new">New password</Label>
+                  <Input
+                    id="pw-new"
+                    type="password"
+                    value={pwNew}
+                    onChange={(e) => setPwNew(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="pw-new2">Confirm new password</Label>
+                  <Input
+                    id="pw-new2"
+                    type="password"
+                    value={pwNew2}
+                    onChange={(e) => setPwNew2(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setPwOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={() => void completePasswordChange()} disabled={pwLoading}>
+                  Update password
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {!clinicId && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
@@ -152,7 +321,7 @@ export default function DoctorDashboard() {
               <ActivePatientPanel
                 patient={activePatient}
                 doctorName={user?.name}
-                letterhead={null}
+                letterhead={clinicLetterhead}
               />
 
               {activePatient && selectedAppt && (
@@ -194,9 +363,11 @@ export default function DoctorDashboard() {
 
                   <div className="mb-6">
                     <PrescriptionCanvas
+                      key={selectedAppointmentId ?? "none"}
                       value={prescriptionNotes}
                       onChange={setPrescriptionNotes}
                       isRecording={false}
+                      onHandwritingChange={setHandwritingStrokes}
                     />
                   </div>
 

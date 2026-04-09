@@ -3,6 +3,7 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { realtimeService } from "../services/realtime.service";
 import type { RealtimeEvent } from "@shared/api";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ router.get(
   (req: Request, res: Response) => {
     const { clinicId } = req.params;
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     res.setHeader("Content-Type", "text/event-stream");

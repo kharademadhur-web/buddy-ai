@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, X, Loader2 } from "lucide-react";
 import { Medicine } from "@/context/ClinicContext";
+import { apiFetch } from "@/lib/api-base";
 
 interface MedicineTableProps {
   medicines: Medicine[];
@@ -8,12 +9,18 @@ interface MedicineTableProps {
   editable?: boolean;
 }
 
-const mockMedicines = [
-  { id: "1", name: "Paracetamol", dosage: "500mg", duration: "5 days", frequency: "Thrice daily" },
-  { id: "2", name: "Ibuprofen", dosage: "400mg", duration: "3 days", frequency: "Twice daily" },
-  { id: "3", name: "Amoxicillin", dosage: "250mg", duration: "7 days", frequency: "Twice daily" },
-  { id: "4", name: "Metformin", dosage: "500mg", duration: "30 days", frequency: "Twice daily" },
-  { id: "5", name: "Lisinopril", dosage: "10mg", duration: "30 days", frequency: "Once daily" },
+type SearchRow = {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+};
+
+/** Last-resort when API unreachable */
+const OFFLINE_SUGGESTIONS: SearchRow[] = [
+  { name: "Paracetamol", dosage: "500mg", duration: "5 days", frequency: "Thrice daily" },
+  { name: "Ibuprofen", dosage: "400mg", duration: "3 days", frequency: "Twice daily" },
+  { name: "Amoxicillin", dosage: "250mg", duration: "7 days", frequency: "Twice daily" },
 ];
 
 export default function MedicineTable({ medicines, onChange, editable = true }: MedicineTableProps) {
@@ -24,7 +31,44 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
     duration: "",
     frequency: "",
   });
-  const [selectedMedicineName, setSelectedMedicineName] = useState("");
+  const [search, setSearch] = useState("");
+  const [suggestions, setSuggestions] = useState<SearchRow[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void (async () => {
+        setSearchLoading(true);
+        try {
+          const res = await apiFetch(
+            `/api/medicines/search?q=${encodeURIComponent(q)}&limit=20`
+          );
+          const j = (await res.json()) as { results?: SearchRow[] };
+          if (res.ok && Array.isArray(j.results)) {
+            setSuggestions(j.results);
+          } else {
+            setSuggestions(
+              OFFLINE_SUGGESTIONS.filter(
+                (m) => m.name.toLowerCase().includes(q.toLowerCase())
+              )
+            );
+          }
+        } catch {
+          setSuggestions(
+            OFFLINE_SUGGESTIONS.filter((m) => m.name.toLowerCase().includes(q.toLowerCase()))
+          );
+        } finally {
+          setSearchLoading(false);
+        }
+      })();
+    }, 280);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const handleAddMedicine = () => {
     if (!newMedicine.name || !newMedicine.dosage || !newMedicine.duration || !newMedicine.frequency) {
@@ -46,21 +90,21 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
     onChange(medicines.filter((m) => m.id !== medicineId));
   };
 
-  const handleQuickAdd = (medicine: typeof mockMedicines[0]) => {
+  const addFromSearchRow = (row: SearchRow) => {
     const newMed: Medicine = {
-      id: Date.now().toString(),
-      name: medicine.name,
-      dosage: medicine.dosage,
-      duration: medicine.duration,
-      frequency: medicine.frequency,
+      id: Date.now().toString() + Math.random().toString(16).slice(2),
+      name: row.name,
+      dosage: row.dosage,
+      duration: row.duration,
+      frequency: row.frequency,
     };
     onChange([...medicines, newMed]);
-    setSelectedMedicineName("");
+    setSearch("");
+    setSuggestions([]);
   };
 
   return (
     <div className="space-y-4">
-      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -83,6 +127,7 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
                   {editable && (
                     <td className="px-4 py-3 text-center">
                       <button
+                        type="button"
                         onClick={() => handleRemoveMedicine(medicine.id)}
                         className="text-red-600 hover:text-red-700 transition-colors"
                       >
@@ -105,40 +150,55 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
 
       {editable && (
         <div className="space-y-3">
-          {/* Quick Add */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Quick Add from Common Medicines
+              Search medicines
             </label>
-            <div className="flex gap-2">
-              <select
-                value={selectedMedicineName}
-                onChange={(e) => {
-                  const medicine = mockMedicines.find((m) => m.name === e.target.value);
-                  if (medicine) {
-                    handleQuickAdd(medicine);
-                  }
-                }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              >
-                <option value="">Select medicine...</option>
-                {mockMedicines.map((m) => (
-                  <option key={m.name} value={m.name}>
-                    {m.name} ({m.dosage})
-                  </option>
-                ))}
-              </select>
+            <div className="relative">
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Type to search formulary (e.g. Para, Amox)…"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                autoComplete="off"
+              />
+              {searchLoading && (
+                <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-gray-400" />
+              )}
             </div>
+            {search.trim().length > 0 && suggestions.length > 0 && (
+              <ul className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+                {suggestions.map((row) => (
+                  <li key={`${row.name}-${row.dosage}`}>
+                    <button
+                      type="button"
+                      onClick={() => addFromSearchRow(row)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
+                    >
+                      <span className="font-semibold text-gray-900">{row.name}</span>{" "}
+                      <span className="text-gray-600">{row.dosage}</span>
+                      <span className="text-gray-500 text-xs block">
+                        {row.frequency} · {row.duration}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {search.trim().length > 0 && !searchLoading && suggestions.length === 0 && (
+              <p className="text-xs text-gray-500 mt-2">No matches — use custom add below.</p>
+            )}
           </div>
 
-          {/* Add New */}
           {!showAddForm ? (
             <button
+              type="button"
               onClick={() => setShowAddForm(true)}
               className="w-full py-2 border-2 border-dashed border-blue-400 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              Add Custom Medicine
+              Add custom medicine
             </button>
           ) : (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
@@ -149,43 +209,45 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
                 onChange={(e) =>
                   setNewMedicine((prev) => ({ ...prev, name: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <input
                 type="text"
-                placeholder="Dosage (e.g., 500mg)"
+                placeholder="Dosage (e.g. 500mg)"
                 value={newMedicine.dosage}
                 onChange={(e) =>
                   setNewMedicine((prev) => ({ ...prev, dosage: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <input
                 type="text"
-                placeholder="Frequency (e.g., Twice daily)"
+                placeholder="Frequency (e.g. Twice daily)"
                 value={newMedicine.frequency}
                 onChange={(e) =>
                   setNewMedicine((prev) => ({ ...prev, frequency: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <input
                 type="text"
-                placeholder="Duration (e.g., 5 days)"
+                placeholder="Duration (e.g. 5 days)"
                 value={newMedicine.duration}
                 onChange={(e) =>
                   setNewMedicine((prev) => ({ ...prev, duration: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={handleAddMedicine}
                   className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-sm"
                 >
                   Add
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowAddForm(false)}
                   className="flex-1 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold transition-colors text-sm"
                 >

@@ -6,6 +6,7 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { realtimeService } from "../services/realtime.service";
 import type { CompleteConsultationRequest, RealtimeEvent } from "@shared/api";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -50,10 +51,10 @@ router.post(
   requireRole("doctor", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = completeSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -67,19 +68,19 @@ router.post(
       .eq("id", parsed.data.appointmentId)
       .single();
     if (apptExisting.error || !apptExisting.data) {
-      return res.status(404).json({ error: "Appointment not found" });
+      return sendJsonError(res, 404, "Appointment not found", "NOT_FOUND");
     }
     const row = apptExisting.data;
     if (row.clinic_id !== parsed.data.clinicId || row.patient_id !== parsed.data.patientId) {
-      return res.status(400).json({ error: "Appointment does not match clinic or patient" });
+      return sendJsonError(res, 400, "Appointment does not match clinic or patient", "VALIDATION_ERROR");
     }
     if (req.user?.role === "doctor" || req.user?.role === "independent") {
       if (row.doctor_user_id !== req.user.userId) {
-        return res.status(403).json({ error: "Not assigned to this appointment" });
+        return sendJsonError(res, 403, "Not assigned to this appointment", "FORBIDDEN");
       }
     }
     if (row.status === "completed") {
-      return res.status(400).json({ error: "Consultation already completed for this visit" });
+      return sendJsonError(res, 400, "Consultation already completed for this visit", "VALIDATION_ERROR");
     }
 
     const dupConsult = await supabase
@@ -88,10 +89,10 @@ router.post(
       .eq("appointment_id", parsed.data.appointmentId)
       .maybeSingle();
     if (dupConsult.error) {
-      return res.status(500).json({ error: dupConsult.error.message });
+      return sendJsonError(res, 500, dupConsult.error.message, "INTERNAL_SERVER_ERROR");
     }
     if (dupConsult.data) {
-      return res.status(409).json({ error: "Consultation already exists for this appointment" });
+      return sendJsonError(res, 409, "Consultation already exists for this appointment", "CONFLICT");
     }
 
     // Mark appointment as in_consultation first
@@ -101,7 +102,7 @@ router.post(
       .eq("id", parsed.data.appointmentId)
       .select("*")
       .single();
-    if (appt.error || !appt.data) return res.status(404).json({ error: "Appointment not found" });
+    if (appt.error || !appt.data) return sendJsonError(res, 404, "Appointment not found", "NOT_FOUND");
 
     const structuredPrescription =
       parsed.data.prescription?.items && parsed.data.prescription.items.length > 0
@@ -132,7 +133,7 @@ router.post(
       .single();
 
     if (consultationRes.error || !consultationRes.data) {
-      return res.status(500).json({ error: consultationRes.error?.message || "Failed to create consultation" });
+      return sendJsonError(res, 500, consultationRes.error?.message || "Failed to create consultation", "INTERNAL_SERVER_ERROR");
     }
 
     // Create prescription
@@ -150,7 +151,7 @@ router.post(
       .single();
 
     if (rxRes.error || !rxRes.data) {
-      return res.status(500).json({ error: rxRes.error?.message || "Failed to create prescription" });
+      return sendJsonError(res, 500, rxRes.error?.message || "Failed to create prescription", "INTERNAL_SERVER_ERROR");
     }
 
     if (parsed.data.prescription?.items?.length) {
@@ -165,7 +166,7 @@ router.post(
       }));
       const itemsRes = await supabase.from("prescription_items").insert(items).select("*");
       if (itemsRes.error) {
-        return res.status(500).json({ error: itemsRes.error.message || "Failed to create prescription items" });
+        return sendJsonError(res, 500, itemsRes.error.message || "Failed to create prescription items", "INTERNAL_SERVER_ERROR");
       }
       (rxRes.data as any).items = itemsRes.data ?? [];
     } else {
@@ -222,9 +223,9 @@ router.get(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const clinicId = (req.query as any).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -238,7 +239,7 @@ router.get(
       .eq("patient_id", req.params.patientId)
       .order("created_at", { ascending: false });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, consultations: data ?? [] });
   }
 );
@@ -257,7 +258,7 @@ router.patch(
   requireRole("doctor", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = handwritingSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const supabase =
       req.user?.role === "super-admin"
@@ -269,14 +270,14 @@ router.patch(
       .select("id, clinic_id, doctor_user_id")
       .eq("id", req.params.consultationId)
       .single();
-    if (existing.error || !existing.data) return res.status(404).json({ error: "Consultation not found" });
+    if (existing.error || !existing.data) return sendJsonError(res, 404, "Consultation not found", "NOT_FOUND");
 
     if (req.user?.role !== "super-admin") {
       if (existing.data.clinic_id !== req.user?.clinicId) {
-        return res.status(403).json({ error: "Clinic access denied" });
+        return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
       }
       if (existing.data.doctor_user_id !== req.user?.userId) {
-        return res.status(403).json({ error: "Not your consultation" });
+        return sendJsonError(res, 403, "Not your consultation", "FORBIDDEN");
       }
     }
 
@@ -290,7 +291,7 @@ router.patch(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to update" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to update", "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, consultation: data });
   }
 );
@@ -307,9 +308,9 @@ router.get(
     const since =
       (req.query as { since?: string }).since ||
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -332,7 +333,7 @@ router.get(
     }
 
     const { data, error } = await q;
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, alerts: data ?? [] });
   }
 );

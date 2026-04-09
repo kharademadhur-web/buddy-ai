@@ -1,465 +1,270 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
-import {
-  Users,
-  Building2,
-  TrendingUp,
-  AlertCircle,
-  Loader2,
-  Plus,
-  Eye,
-} from "lucide-react";
+import { Building2, TrendingUp, AlertCircle, Loader2, IndianRupee, Ban, Clock } from "lucide-react";
 import { apiFetch } from "@/lib/api-base";
+import { OnboardingCalendar } from "@/components/OnboardingCalendar";
 
-interface ClinicStats {
-  clinic_id: string;
+interface SaasSummary {
+  totalClinics: number;
+  liveClinics: number;
+  suspendedClinics: number;
+  paymentDueClinics: number;
+  monthlyRevenueSaaS: number;
+  month: string;
+}
+
+interface SaasPaymentRow {
+  id: string;
+  amount: number;
+  paid_at: string;
+  period_end?: string | null;
+  clinics?: { name?: string; clinic_code?: string } | null;
+}
+
+interface OnboardClinic {
+  id: string;
   name: string;
-  code: string;
-  status: string;
-  totalUsers: number;
-  doctors: number;
-  receptionists: number;
-  totalRevenue: string;
-  paidRevenue: string;
-  pendingRevenue: string;
-}
-
-interface RevenueData {
-  totalRevenue: string;
-  paidRevenue: string;
-  pendingRevenue: string;
-  failedRevenue: string;
-  totalTransactions: number;
-}
-
-interface UserStats {
-  totalUsers: number;
-  activeUsers: number;
-  inactiveUsers: number;
-  doctors: number;
-  receptionists: number;
-  independentDoctors: number;
-  superAdmins: number;
+  clinic_code: string;
+  created_at: string;
+  subscription_status?: string;
 }
 
 export default function AdminDashboardSuperAdmin() {
   const { user } = useAdminAuth();
-  const [clinicStats, setClinicStats] = useState<ClinicStats[]>([]);
-  const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [trendData, setTrendData] = useState<any[]>([]);
+  const [summary, setSummary] = useState<SaasSummary | null>(null);
+  const [payments, setPayments] = useState<SaasPaymentRow[]>([]);
+  const [onboards, setOnboards] = useState<OnboardClinic[]>([]);
+  const [pendingOnboardCount, setPendingOnboardCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const accessToken = sessionStorage.getItem("admin_access_token") || "";
 
   useEffect(() => {
-    const fetchAnalytics = async () => {
+    const load = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Fetch revenue data
-        const revenueResponse = await apiFetch("/api/admin/analytics/revenue");
-        if (revenueResponse.ok) {
-          const revenueJson = await revenueResponse.json();
-          setRevenueData(revenueJson.revenue);
+        const [sRes, pRes, oRes] = await Promise.all([
+          apiFetch("/api/admin/analytics/saas-summary"),
+          apiFetch("/api/admin/analytics/saas-payments?limit=30"),
+          apiFetch("/api/admin/analytics/onboarding-clinics?days=90"),
+        ]);
+
+        const sJson = await sRes.json();
+        if (sRes.ok && sJson.success && sJson.summary) {
+          setSummary(sJson.summary);
         }
 
-        // Fetch user stats
-        const userResponse = await apiFetch("/api/admin/analytics/users");
-        if (userResponse.ok) {
-          const userJson = await userResponse.json();
-          setUserStats(userJson.stats);
+        const pJson = await pRes.json();
+        if (pRes.ok && pJson.success) {
+          setPayments(pJson.payments || []);
         }
 
-        // Fetch clinic stats
-        const clinicResponse = await apiFetch("/api/admin/analytics/clinics");
-        if (clinicResponse.ok) {
-          const clinicJson = await clinicResponse.json();
-          setClinicStats(clinicJson.clinics);
-        }
-
-        // Fetch trend data
-        const trendResponse = await apiFetch("/api/admin/analytics/trends?months=6");
-        if (trendResponse.ok) {
-          const trendJson = await trendResponse.json();
-          setTrendData(trendJson.trends);
+        const oJson = await oRes.json();
+        if (oRes.ok && oJson.success) {
+          setOnboards(oJson.clinics || []);
+          setPendingOnboardCount(oJson.pendingCount ?? 0);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load analytics");
-        console.error("Analytics fetch error:", err);
+        setError(err instanceof Error ? err.message : "Failed to load dashboard");
       } finally {
         setIsLoading(false);
       }
     };
 
-    if (accessToken) {
-      fetchAnalytics();
-    }
+    if (accessToken) load();
   }, [accessToken]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[40vh]">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-          <p>Loading dashboard...</p>
+          <p className="text-gray-600">Loading dashboard…</p>
         </div>
       </div>
     );
   }
 
-  const revenueChartData = revenueData
-    ? [
-        { name: "Paid", value: parseFloat(revenueData.paidRevenue), fill: "#10b981" },
-        { name: "Pending", value: parseFloat(revenueData.pendingRevenue), fill: "#f59e0b" },
-        { name: "Failed", value: parseFloat(revenueData.failedRevenue), fill: "#ef4444" },
-      ]
-    : [];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-              <p className="text-gray-600 mt-1">Welcome back, {user?.name}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline">
-                <Eye className="mr-2 h-4 w-4" />
-                View Profile
-              </Button>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-8">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Overview</h2>
+        <p className="text-gray-600 mt-1">Welcome back, {user?.name}</p>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Error Alert */}
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Monthly revenue</CardTitle>
+            <CardDescription>{summary?.month ?? ""}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="text-3xl font-bold text-gray-900">
+                ₹{Number(summary?.monthlyRevenueSaaS ?? 0).toLocaleString("en-IN")}
+              </div>
+              <IndianRupee className="h-8 w-8 text-violet-500 opacity-30" />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Base plan ₹5,999/mo per clinic</p>
+          </CardContent>
+        </Card>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Total Clinics */}
-          <Card>
+        <Link to="/admin-dashboard/clinics" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <Card className="h-full transition-shadow hover:shadow-md cursor-pointer border-blue-100">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Total Clinics
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">Total clinic</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <div className="text-2xl font-bold text-gray-900">
-                  {clinicStats.length}
-                </div>
-                <Building2 className="h-8 w-8 text-blue-500 opacity-20" />
+                <div className="text-3xl font-bold text-gray-900">{summary?.totalClinics ?? 0}</div>
+                <Building2 className="h-8 w-8 text-blue-500 opacity-30" />
               </div>
+              <p className="text-xs text-blue-600 mt-2">Open clinic list</p>
             </CardContent>
           </Card>
+        </Link>
 
-          {/* Total Users */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Total Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="text-2xl font-bold text-gray-900">
-                  {userStats?.totalUsers || 0}
-                </div>
-                <Users className="h-8 w-8 text-green-500 opacity-20" />
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Total suspended</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="text-3xl font-bold text-gray-800">{summary?.suspendedClinics ?? 0}</div>
+              <Ban className="h-8 w-8 text-gray-400 opacity-40" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Active clinic</CardTitle>
+            <CardDescription>Active subscription</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="text-3xl font-bold text-emerald-700">{summary?.liveClinics ?? 0}</div>
+              <TrendingUp className="h-8 w-8 text-emerald-500 opacity-30" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment history</CardTitle>
+            <CardDescription>Recorded SaaS subscription payments</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {payments.length === 0 ? (
+              <p className="text-sm text-gray-500">No payments recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-600">
+                      <th className="py-2 pr-2">Clinic</th>
+                      <th className="py-2 pr-2">Amount</th>
+                      <th className="py-2">Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((p) => (
+                      <tr key={p.id} className="border-b border-gray-100">
+                        <td className="py-2 pr-2">
+                          <div className="font-medium text-gray-900">
+                            {p.clinics?.name ?? "—"}
+                          </div>
+                          <div className="text-xs font-mono text-gray-500">{p.clinics?.clinic_code}</div>
+                        </td>
+                        <td className="py-2 pr-2">₹{Number(p.amount).toLocaleString("en-IN")}</td>
+                        <td className="py-2 text-gray-600">
+                          {new Date(p.paid_at).toLocaleDateString("en-IN")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
+            )}
+            <Button asChild variant="outline" className="mt-4 w-full sm:w-auto" size="sm">
+              <Link to="/admin-dashboard/clinics">Manage clinics & payments</Link>
+            </Button>
+          </CardContent>
+        </Card>
 
-          {/* Total Revenue */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Total Revenue
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">
-                    ₹{revenueData?.totalRevenue || "0"}
-                  </div>
-                  <p className="text-xs text-green-600 mt-1">
-                    Paid: ₹{revenueData?.paidRevenue || "0"}
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-purple-500 opacity-20" />
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle>New onboards</CardTitle>
+                <CardDescription>Recent clinics (90 days)</CardDescription>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Pending Approvals */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Active Doctors
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="text-2xl font-bold text-gray-900">
-                  {userStats?.doctors || 0}
-                </div>
-                <Users className="h-8 w-8 text-orange-500 opacity-20" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts and Tables */}
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="clinics">Clinics</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-          </TabsList>
-
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Revenue Pie Chart */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Revenue Distribution</CardTitle>
-                  <CardDescription>Payment status breakdown</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {revenueChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={revenueChartData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, value }) => `${name}: ₹${value}`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {revenueChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.fill} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value) => `₹${value}`} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-gray-500">
-                      No revenue data available
+              {pendingOnboardCount > 0 ? (
+                <Badge variant="secondary" className="gap-1">
+                  <Clock className="h-3 w-3" />
+                  {pendingOnboardCount} pending payment
+                </Badge>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {onboards.length === 0 ? (
+              <p className="text-sm text-gray-500">No recent onboardings.</p>
+            ) : (
+              <ul className="space-y-2 max-h-[200px] overflow-y-auto">
+                {onboards.slice(0, 12).map((c) => (
+                  <li key={c.id} className="flex justify-between gap-2 text-sm border-b border-gray-50 pb-2">
+                    <div>
+                      <Link
+                        to={`/admin-dashboard/clinic/${c.id}`}
+                        className="font-medium text-blue-700 hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                      <div className="text-xs font-mono text-gray-500">{c.clinic_code}</div>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* User Distribution */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>User Distribution</CardTitle>
-                  <CardDescription>Users by role</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {userStats ? (
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Doctors</span>
-                        <Badge variant="default">{userStats.doctors}</Badge>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Receptionists</span>
-                        <Badge variant="secondary">{userStats.receptionists}</Badge>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Independent Doctors</span>
-                        <Badge variant="outline">
-                          {userStats.independentDoctors}
+                    <div className="text-right text-xs text-gray-600">
+                      {new Date(c.created_at).toLocaleDateString("en-IN")}
+                      <div>
+                        <Badge variant="outline" className="mt-1 text-[10px]">
+                          {c.subscription_status ?? "—"}
                         </Badge>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Active Users</span>
-                        <Badge variant="default">{userStats.activeUsers}</Badge>
-                      </div>
                     </div>
-                  ) : (
-                    <div className="text-gray-500">No user data available</div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Trends Chart */}
-            {trendData.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Revenue Trends</CardTitle>
-                  <CardDescription>Last 6 months</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={trendData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip formatter={(value) => `₹${value}`} />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="paid"
-                        stroke="#10b981"
-                        name="Paid"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="pending"
-                        stroke="#f59e0b"
-                        name="Pending"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                  </li>
+                ))}
+              </ul>
             )}
-          </TabsContent>
-
-          {/* Clinics Tab */}
-          <TabsContent value="clinics">
-            <Card>
-              <CardHeader className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Clinics</CardTitle>
-                  <CardDescription>Manage all clinics in the system</CardDescription>
-                </div>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Clinic
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-2 px-4">Name</th>
-                        <th className="text-left py-2 px-4">Code</th>
-                        <th className="text-left py-2 px-4">Users</th>
-                        <th className="text-left py-2 px-4">Revenue</th>
-                        <th className="text-left py-2 px-4">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {clinicStats.map((clinic) => (
-                        <tr key={clinic.clinic_id} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4">{clinic.name}</td>
-                          <td className="py-3 px-4 font-mono text-xs">{clinic.code}</td>
-                          <td className="py-3 px-4">{clinic.totalUsers}</td>
-                          <td className="py-3 px-4">₹{clinic.totalRevenue}</td>
-                          <td className="py-3 px-4">
-                            <Badge
-                              variant={
-                                clinic.status === "active" ? "default" : "secondary"
-                              }
-                            >
-                              {clinic.status}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Users Tab */}
-          <TabsContent value="users">
-            <Card>
-              <CardHeader>
-                <CardTitle>Users Summary</CardTitle>
-                <CardDescription>Overall user statistics</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {userStats && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Total Users</p>
-                      <p className="text-2xl font-bold">{userStats.totalUsers}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Active</p>
-                      <p className="text-2xl font-bold text-green-600">
-                        {userStats.activeUsers}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Inactive</p>
-                      <p className="text-2xl font-bold text-gray-600">
-                        {userStats.inactiveUsers}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Doctors</p>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {userStats.doctors}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Receptionists</p>
-                      <p className="text-2xl font-bold text-purple-600">
-                        {userStats.receptionists}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Super Admins</p>
-                      <p className="text-2xl font-bold text-red-600">
-                        {userStats.superAdmins}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Onboarding calendar</CardTitle>
+          <CardDescription>Clinic creation dates (last 90 days loaded)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OnboardingCalendar clinics={onboards} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

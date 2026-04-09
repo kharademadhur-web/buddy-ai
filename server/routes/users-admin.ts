@@ -8,8 +8,10 @@ import {
   ConflictError,
   ForbiddenError,
 } from "../middleware/error-handler.middleware";
+import { sendJsonError } from "../lib/send-json-error";
 import UserIdGeneratorService from "../services/user-id-generator.service";
 import CredentialGeneratorService from "../services/credential-generator.service";
+import type { GeneratedCredentials } from "../services/credential-generator.service";
 import { writeAuditLog } from "../services/audit.service";
 
 const router = Router();
@@ -101,47 +103,83 @@ router.post(
       }
     }
 
-    // Check if user with this phone already exists
+    // Check phone uniqueness within this clinic (not global across all clinics).
     const { data: existingUser } = await supabase
       .from("users")
       .select("id")
       .eq("phone", phone)
+      .eq("clinic_id", clinic_id)
       .single();
 
     if (existingUser) {
-      throw new ConflictError("User with this phone number already exists");
+      throw new ConflictError("User with this phone number already exists in this clinic");
     }
 
-    // Generate user ID
-    const user_id = await UserIdGeneratorService.generateUserID(clinic_code, staffRole);
+    type CreatedUser = {
+      id: string;
+      user_id: string;
+      name: string;
+      phone: string;
+      email: string | null;
+      role: string;
+      clinic_id: string;
+      password_hash: string;
+      is_active: boolean;
+    };
 
-    // Generate credentials
-    const credentials = await CredentialGeneratorService.generateCredentials(
-      user_id
-    );
+    let user: CreatedUser | undefined;
+    let credentials: GeneratedCredentials | undefined;
+    let forceScanAllocator = false;
 
-    // Create user
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .insert({
-        user_id,
-        name,
-        phone,
-        email: email || null,
-        role: staffRole,
-        clinic_id,
-        password_hash: credentials.password_hash,
-        is_active: true,
-      })
-      .select()
-      .single();
+    const maxAttempts = 25;
+    let lastInsertError: { message?: string } | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const user_id = forceScanAllocator
+        ? await UserIdGeneratorService.generateUserIdUniqueByScan(clinic_code, clinic_id, staffRole)
+        : await UserIdGeneratorService.generateUserID(clinic_code, clinic_id, staffRole);
+      credentials = await CredentialGeneratorService.generateCredentials(user_id);
 
-    if (userError || !user) {
-      throw new Error(`Failed to create user: ${userError?.message}`);
+      const { data: created, error: userError } = await supabase
+        .from("users")
+        .insert({
+          user_id,
+          name,
+          phone,
+          email: email || null,
+          role: staffRole,
+          clinic_id,
+          password_hash: credentials.password_hash,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (!userError && created) {
+        user = created as CreatedUser;
+        lastInsertError = null;
+        break;
+      }
+
+      lastInsertError = userError;
+      const errMsg = userError?.message ?? "";
+      if (
+        UserIdGeneratorService.isDuplicateUserIdConstraintError(userError) &&
+        attempt < maxAttempts - 1
+      ) {
+        forceScanAllocator = true;
+        await UserIdGeneratorService.repairCounterFromExistingUserIds(
+          clinic_code,
+          clinic_id,
+          staffRole
+        );
+        continue;
+      }
+      throw new Error(`Failed to create user: ${errMsg}`);
     }
 
-    // Increment counter after successful user creation
-    await UserIdGeneratorService.incrementUserIdCounter(clinic_code, staffRole);
+    if (!user || !credentials) {
+      throw new Error(`Failed to create user: ${lastInsertError?.message ?? "unknown"}`);
+    }
 
     // If doctor, create doctor profile
     if (staffRole === "doctor") {
@@ -233,7 +271,7 @@ router.post(
       await CredentialGeneratorService.sendCredentials(
         {
           name,
-          user_id,
+          user_id: user.user_id,
           email,
           phone,
         },
@@ -244,7 +282,7 @@ router.post(
       await CredentialGeneratorService.sendCredentials(
         {
           name,
-          user_id,
+          user_id: user.user_id,
           email,
           phone,
         },
@@ -300,9 +338,23 @@ router.get(
 
     const supabase = getSupabaseClient();
 
-    let query = supabase
-      .from("users")
-      .select("id, user_id, name, phone, email, role, is_active, created_at, clinic_id");
+    let query = supabase.from("users").select(`
+        id,
+        user_id,
+        name,
+        phone,
+        email,
+        role,
+        is_active,
+        created_at,
+        clinic_id,
+        clinics (
+          subscription_status,
+          subscription_started_at,
+          subscription_expires_at,
+          saas_plan_amount_monthly
+        )
+      `);
 
     const effectiveClinic =
       req.user?.role === "clinic-admin" ? req.user.clinicId : (clinic_id as string | undefined);
@@ -340,6 +392,7 @@ router.get(
 router.get(
   "/:userId",
   authMiddleware,
+  requireSuperAdminOrClinicAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
 
@@ -699,7 +752,7 @@ router.post(
     const success = await DeviceApprovalService.resetDevice(userId);
 
     if (!success) {
-      return res.status(400).json({ error: "Failed to reset device" });
+      return sendJsonError(res, 400, "Failed to reset device", "VALIDATION_ERROR");
     }
 
     res.json({

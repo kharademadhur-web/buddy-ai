@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
 
 type CreateUserRole = "doctor" | "receptionist";
 
 export default function AdminUsers() {
-  const { tokens } = useAdminAuth();
+  const { tokens, user } = useAdminAuth();
+  const canToggleUserActive = user?.role === "super-admin";
   const [users, setUsers] = useState<any[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,14 +63,14 @@ export default function AdminUsers() {
   const fetchClinics = async () => {
     const res = await apiFetch("/api/admin/clinics", { headers });
     const json = await res.json();
-    if (!res.ok || !json.success) throw new Error(json.error || "Failed to load clinics");
+    if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to load clinics");
     setClinics(json.clinics || []);
   };
 
   const fetchUsers = async () => {
     const res = await apiFetch("/api/admin/users", { headers });
     const json = await res.json();
-    if (!res.ok || !json.success) throw new Error(json.error || "Failed to load users");
+    if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to load users");
     setUsers(json.users || []);
   };
 
@@ -105,13 +106,13 @@ export default function AdminUsers() {
           role: createForm.role,
           clinic_id: createForm.clinic_id,
           clinic_code: createForm.clinic_code,
-          license_number: createForm.role === "doctor" ? createForm.license_number || null : null,
+          license_number: createForm.role === "doctor" ? createForm.license_number.trim() : null,
           send_credentials_to:
             createForm.send_credentials_to === "none" ? undefined : createForm.send_credentials_to,
         }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to create user");
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to create user");
       setCreatedCredentials(json.credentials || null);
       await fetchUsers();
       setCreateForm((p) => ({
@@ -128,6 +129,31 @@ export default function AdminUsers() {
     }
   };
 
+  const clinicById = useMemo(() => {
+    const m: Record<string, { name?: string; clinic_code?: string }> = {};
+    for (const c of clinics) m[c.id] = c;
+    return m;
+  }, [clinics]);
+
+  const subForUser = (u: any) => {
+    const c = u.clinics;
+    const row = Array.isArray(c) ? c[0] : c;
+    return row as
+      | {
+          subscription_status?: string;
+          subscription_started_at?: string | null;
+          subscription_expires_at?: string | null;
+        }
+      | undefined;
+  };
+
+  const daysLeft = (exp: string | null | undefined) => {
+    if (!exp) return "—";
+    const t = new Date(exp).getTime();
+    if (Number.isNaN(t)) return "—";
+    return String(Math.max(0, Math.ceil((t - Date.now()) / 86400000)));
+  };
+
   const toggleActive = async (userId: string, isActive: boolean) => {
     setLoading(true);
     setError("");
@@ -138,7 +164,7 @@ export default function AdminUsers() {
         body: JSON.stringify({ is_active: !isActive }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to update user");
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to update user");
       await fetchUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update user");
@@ -244,7 +270,7 @@ export default function AdminUsers() {
               </div>
               {createForm.role === "doctor" ? (
                 <div className="grid gap-2">
-                  <Label htmlFor="license">License number (optional)</Label>
+                  <Label htmlFor="license">License number *</Label>
                   <Input
                     id="license"
                     value={createForm.license_number}
@@ -281,7 +307,8 @@ export default function AdminUsers() {
                   loading ||
                   !createForm.clinic_id ||
                   !createForm.name.trim() ||
-                  !createForm.phone.trim()
+                  !createForm.phone.trim() ||
+                  (createForm.role === "doctor" && !createForm.license_number.trim())
                 }
               >
                 Create
@@ -317,7 +344,19 @@ export default function AdminUsers() {
                   Clinic
                 </th>
                 <th className="px-6 py-4 text-left font-semibold text-gray-700">
-                  Last Login
+                  Subscription
+                </th>
+                <th className="px-6 py-4 text-left font-semibold text-gray-700">
+                  Start
+                </th>
+                <th className="px-6 py-4 text-left font-semibold text-gray-700">
+                  Expiry
+                </th>
+                <th className="px-6 py-4 text-left font-semibold text-gray-700">
+                  Days left
+                </th>
+                <th className="px-6 py-4 text-left font-semibold text-gray-700">
+                  Created
                 </th>
                 <th className="px-6 py-4 text-left font-semibold text-gray-700">
                   Status
@@ -328,37 +367,68 @@ export default function AdminUsers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-semibold text-gray-900">
-                    {user.name}
-                  </td>
-                  <td className="px-6 py-4 text-gray-700 capitalize">
-                    {user.role}
-                  </td>
-                  <td className="px-6 py-4 text-gray-700">
-                    <span className="font-mono text-xs text-gray-500">{user.user_id}</span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600 text-sm">
-                    {user.created_at ? new Date(user.created_at).toLocaleString() : "-"}
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge variant={user.is_active ? "secondary" : "outline"}>
-                      {user.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <button
-                      className="text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
-                      disabled={loading}
-                      onClick={() => toggleActive(user.id, Boolean(user.is_active))}
-                      title="Toggle active"
-                    >
-                      <ToggleRight className="w-5 h-5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {users.map((user) => {
+                const sub = subForUser(user);
+                const cc = user.clinic_id ? clinicById[user.clinic_id] : undefined;
+                return (
+                  <tr key={user.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 font-semibold text-gray-900">
+                      {user.name}
+                      <div className="font-mono text-xs text-gray-500 font-normal">{user.user_id}</div>
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 capitalize">
+                      {user.role}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 text-sm">
+                      {cc ? (
+                        <>
+                          <div>{cc.name}</div>
+                          <div className="font-mono text-xs text-gray-500">{cc.clinic_code}</div>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant="outline" className="text-xs">
+                        {sub?.subscription_status ?? "—"}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 text-sm">
+                      {sub?.subscription_started_at
+                        ? new Date(sub.subscription_started_at).toLocaleDateString("en-IN")
+                        : "—"}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 text-sm">
+                      {sub?.subscription_expires_at
+                        ? new Date(sub.subscription_expires_at).toLocaleDateString("en-IN")
+                        : "—"}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 text-sm">
+                      {daysLeft(sub?.subscription_expires_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 text-sm">
+                      {user.created_at ? new Date(user.created_at).toLocaleDateString("en-IN") : "—"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant={user.is_active ? "secondary" : "outline"}>
+                        {user.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        className="text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
+                        disabled={loading || !canToggleUserActive}
+                        onClick={() => toggleActive(user.id, Boolean(user.is_active))}
+                        title={canToggleUserActive ? "Toggle active" : "Only super admin can toggle"}
+                        type="button"
+                      >
+                        <ToggleRight className="w-5 h-5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

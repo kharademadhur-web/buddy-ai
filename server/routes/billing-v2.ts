@@ -8,6 +8,7 @@ import { asyncHandler } from "../middleware/error-handler.middleware";
 import { realtimeService } from "../services/realtime.service";
 import { writeAuditLog } from "../services/audit.service";
 import type { CreateBillRequest, PayBillRequest, RealtimeEvent } from "@shared/api";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -22,13 +23,13 @@ router.get(
     const { clinicId, date } = req.query as { clinicId?: string; date?: string };
     const effectiveClinicId = clinicId || req.user?.clinicId;
     if (!effectiveClinicId) {
-      return res.status(400).json({ error: "clinicId is required" });
+      return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     }
     if (
       req.user?.role !== "super-admin" &&
       req.user?.clinicId !== effectiveClinicId
     ) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const day = date || new Date().toISOString().slice(0, 10);
@@ -48,7 +49,7 @@ router.get(
       .gte("paid_at", start)
       .lte("paid_at", end);
 
-    if (billsErr) return res.status(500).json({ error: billsErr.message });
+    if (billsErr) return sendJsonError(res, 500, billsErr.message, "INTERNAL_SERVER_ERROR");
 
     const totalCollected = (paidBills || []).reduce(
       (sum, b) => sum + Number(b.total_amount || 0),
@@ -63,7 +64,7 @@ router.get(
       .gte("updated_at", start)
       .lte("updated_at", end);
 
-    if (apptErr) return res.status(500).json({ error: apptErr.message });
+    if (apptErr) return sendJsonError(res, 500, apptErr.message, "INTERNAL_SERVER_ERROR");
 
     return res.json({
       success: true,
@@ -92,14 +93,14 @@ router.get(
     };
     const effectiveClinicId = clinicId || req.user?.clinicId;
     if (!effectiveClinicId) {
-      return res.status(400).json({ error: "clinicId is required" });
+      return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     }
     if (req.user?.role === "clinic-admin") {
       if (!req.user.clinicId || req.user.clinicId !== effectiveClinicId) {
-        return res.status(403).json({ error: "Clinic access denied" });
+        return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
       }
     } else if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const take = Math.min(Math.max(parseInt(limit || "30", 10) || 30, 1), 100);
@@ -122,7 +123,7 @@ router.get(
     }
 
     const { data, error } = await q;
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
 
     return res.json({ success: true, bills: data ?? [] });
   })
@@ -142,9 +143,9 @@ router.post(
   requireRole("receptionist", "super-admin"),
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = createBillSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const total = parsed.data.consultationFee + parsed.data.medicineCost;
@@ -166,7 +167,7 @@ router.post(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to create bill" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to create bill", "INTERNAL_SERVER_ERROR");
 
     await writeAuditLog({
       action: "bill_created",
@@ -205,7 +206,7 @@ router.post(
   requireRole("receptionist", "super-admin"),
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = payBillSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const supabase =
       req.user?.role === "super-admin"
@@ -216,9 +217,9 @@ router.post(
       .select("clinic_id, appointment_id")
       .eq("id", req.params.id)
       .single();
-    if (existing.error || !existing.data) return res.status(404).json({ error: "Bill not found" });
+    if (existing.error || !existing.data) return sendJsonError(res, 404, "Bill not found", "NOT_FOUND");
     if (req.user?.role !== "super-admin" && existing.data.clinic_id !== req.user?.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const { data, error } = await supabase
@@ -232,7 +233,7 @@ router.post(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to mark paid" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to mark paid", "INTERNAL_SERVER_ERROR");
 
     let doctorUserId: string | null = null;
     if (existing.data.appointment_id) {

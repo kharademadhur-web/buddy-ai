@@ -5,6 +5,7 @@ import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { normalizePhoneDigits } from "../services/otp-auth.service";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -38,10 +39,10 @@ router.post(
   requireRole("receptionist", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     if (parsed.data.otpSessionId) {
@@ -52,13 +53,13 @@ router.post(
         .eq("id", parsed.data.otpSessionId)
         .single();
       if (oe || !os?.verified_at) {
-        return res.status(400).json({ error: "Invalid or unverified phone OTP session" });
+        return sendJsonError(res, 400, "Invalid or unverified phone OTP session", "VALIDATION_ERROR");
       }
       if (os.contact_type !== "phone") {
-        return res.status(400).json({ error: "OTP session must be for phone" });
+        return sendJsonError(res, 400, "OTP session must be for phone", "VALIDATION_ERROR");
       }
       if (os.contact !== normalizePhoneDigits(parsed.data.phone)) {
-        return res.status(400).json({ error: "Phone does not match verified OTP session" });
+        return sendJsonError(res, 400, "Phone does not match verified OTP session", "VALIDATION_ERROR");
       }
     }
 
@@ -88,7 +89,7 @@ router.post(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to save patient" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to save patient", "INTERNAL_SERVER_ERROR");
     return res.status(201).json({ success: true, patient: data });
   }
 );
@@ -105,9 +106,9 @@ router.get(
     };
 
     const effectiveClinicId = clinicId || req.user?.clinicId;
-    if (!effectiveClinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!effectiveClinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -123,7 +124,7 @@ router.get(
     }
     const take = Math.min(parseInt(limit || "20", 10) || 20, 50);
     const { data, error } = await q.order("updated_at", { ascending: false }).limit(take);
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, patients: data ?? [] });
   }
 );
@@ -134,9 +135,9 @@ router.get(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const clinicId = (req.query as any).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -150,7 +151,7 @@ router.get(
       .eq("id", req.params.id)
       .single();
 
-    if (error || !data) return res.status(404).json({ error: "Patient not found" });
+    if (error || !data) return sendJsonError(res, 404, "Patient not found", "NOT_FOUND");
     return res.json({ success: true, patient: data });
   }
 );
@@ -165,12 +166,12 @@ router.post(
   requireRole("receptionist", "doctor", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = vitalsSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -195,7 +196,7 @@ router.post(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to save vitals" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to save vitals", "INTERNAL_SERVER_ERROR");
     return res.status(201).json({ success: true, vitals: data });
   }
 );
@@ -209,9 +210,9 @@ router.get(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -227,7 +228,7 @@ router.get(
       .order("recorded_at", { ascending: false })
       .limit(20);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, vitals: data ?? [] });
   }
 );

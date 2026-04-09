@@ -7,6 +7,7 @@ import {
   fetchAssignedDoctorIds,
   receptionistMustCoverDoctor,
 } from "../services/receptionist-scope.service";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -23,9 +24,9 @@ router.get(
     const { doctorId, clinicId } = req.query as { doctorId?: string; clinicId?: string };
 
     const effectiveClinicId = clinicId || req.user?.clinicId;
-    if (!effectiveClinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!effectiveClinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -45,7 +46,7 @@ router.get(
       }
       if (doctorId) {
         const gate = receptionistMustCoverDoctor(req.user!, doctorId, assigned);
-        if (gate.ok === false) return res.status(403).json({ error: gate.message });
+        if (gate.ok === false) return sendJsonError(res, 403, gate.message, "FORBIDDEN");
         q = q.eq("doctor_user_id", doctorId);
       } else {
         q = q.in("doctor_user_id", assigned);
@@ -55,7 +56,7 @@ router.get(
     }
 
     const { data, error } = await q.order("appointment_time", { ascending: true });
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, queue: data ?? [] });
   }
 );

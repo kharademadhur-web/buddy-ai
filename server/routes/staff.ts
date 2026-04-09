@@ -7,6 +7,7 @@ import { fetchAssignedDoctorIds } from "../services/receptionist-scope.service";
 import SupabaseStorageService from "../services/supabase-storage.service";
 import OtpAuthService from "../services/otp-auth.service";
 import { asyncHandler, ValidationError } from "../middleware/error-handler.middleware";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 const CLINIC_ASSETS_BUCKET = "clinic-assets";
@@ -21,9 +22,9 @@ router.get(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const clinicId = (req.query as any).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -48,7 +49,7 @@ router.get(
 
     const { data, error } = await q;
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, doctors: data ?? [] });
   }
 );
@@ -63,9 +64,9 @@ router.get(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
-    if (!clinicId) return res.status(400).json({ error: "clinicId is required" });
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -75,11 +76,11 @@ router.get(
 
     const { data: clinic, error } = await supabase
       .from("clinics")
-      .select("letterhead_storage_path, letterhead_mime, letterhead_field_map, payment_qr_storage_path")
+      .select("id, name, phone, address, email, letterhead_storage_path, letterhead_mime, letterhead_field_map, payment_qr_storage_path")
       .eq("id", clinicId)
       .single();
 
-    if (error || !clinic) return res.status(404).json({ error: "Clinic not found" });
+    if (error || !clinic) return sendJsonError(res, 404, "Clinic not found", "NOT_FOUND");
 
     let letterheadSignedUrl: string | null = null;
     let paymentQrSignedUrl: string | null = null;
@@ -104,6 +105,13 @@ router.get(
 
     return res.json({
       success: true,
+      clinic: {
+        id: clinic.id,
+        name: clinic.name,
+        phone: clinic.phone,
+        address: clinic.address,
+        email: clinic.email,
+      },
       letterhead: {
         signedUrl: letterheadSignedUrl,
         mime: clinic.letterhead_mime,

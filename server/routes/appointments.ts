@@ -14,6 +14,7 @@ import type {
   CreateAppointmentRequest,
   RealtimeEvent,
 } from "@shared/api";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -32,17 +33,17 @@ router.post(
   async (req: Request, res: Response) => {
     const parsed = createAppointmentSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.flatten() });
+      return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
     }
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     if (req.user?.role === "receptionist") {
       const assigned = await fetchAssignedDoctorIds(req.user);
       const gate = receptionistMustCoverDoctor(req.user, parsed.data.doctorUserId, assigned);
-      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+      if (gate.ok === false) return sendJsonError(res, 403, gate.message, "FORBIDDEN");
     }
 
     const supabase =
@@ -63,7 +64,7 @@ router.post(
       .single();
 
     if (error || !data) {
-      return res.status(500).json({ error: error?.message || "Failed to create appointment" });
+      return sendJsonError(res, 500, error?.message || "Failed to create appointment", "INTERNAL_SERVER_ERROR");
     }
 
     const event: RealtimeEvent<AppointmentDTO> = {
@@ -86,9 +87,9 @@ router.get("/", authMiddleware, requireRole("doctor", "receptionist", "independe
   };
 
   const effectiveClinicId = clinicId || req.user?.clinicId;
-  if (!effectiveClinicId) return res.status(400).json({ error: "clinicId is required" });
+  if (!effectiveClinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
   if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
-    return res.status(403).json({ error: "Clinic access denied" });
+    return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
   }
 
   const supabase =
@@ -104,7 +105,7 @@ router.get("/", authMiddleware, requireRole("doctor", "receptionist", "independe
     }
     if (doctorId) {
       const gate = receptionistMustCoverDoctor(req.user!, doctorId, assigned);
-      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+      if (gate.ok === false) return sendJsonError(res, 403, gate.message, "FORBIDDEN");
       q = q.eq("doctor_user_id", doctorId);
     } else {
       q = q.in("doctor_user_id", assigned);
@@ -121,7 +122,7 @@ router.get("/", authMiddleware, requireRole("doctor", "receptionist", "independe
   }
 
   const { data, error } = await q.order("appointment_time", { ascending: true });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
   return res.json({ success: true, appointments: data ?? [] });
 });
 
@@ -139,7 +140,7 @@ router.patch(
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = patchAppointmentSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const supabase =
       req.user?.role === "super-admin"
@@ -152,20 +153,20 @@ router.patch(
       .select("clinic_id, doctor_user_id")
       .eq("id", req.params.id)
       .single();
-    if (existing.error || !existing.data) return res.status(404).json({ error: "Appointment not found" });
+    if (existing.error || !existing.data) return sendJsonError(res, 404, "Appointment not found", "NOT_FOUND");
     if (req.user?.role !== "super-admin" && existing.data.clinic_id !== req.user?.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
     if (
       req.user?.role === "doctor" &&
       existing.data.doctor_user_id !== req.user?.userId
     ) {
-      return res.status(403).json({ error: "Not assigned to this appointment" });
+      return sendJsonError(res, 403, "Not assigned to this appointment", "FORBIDDEN");
     }
     if (req.user?.role === "receptionist") {
       const assigned = await fetchAssignedDoctorIds(req.user);
       const gate = receptionistMustCoverDoctor(req.user, existing.data.doctor_user_id, assigned);
-      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+      if (gate.ok === false) return sendJsonError(res, 403, gate.message, "FORBIDDEN");
     }
 
     const update: Record<string, unknown> = {};
@@ -180,7 +181,7 @@ router.patch(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to update" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to update", "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, appointment: data });
   }
 );
@@ -197,7 +198,7 @@ router.post(
   requireRole("receptionist", "super-admin"),
   async (req: Request, res: Response) => {
     const parsed = checkInSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const supabase =
       req.user?.role === "super-admin"
@@ -208,14 +209,14 @@ router.post(
       .select("clinic_id, doctor_user_id")
       .eq("id", req.params.id)
       .single();
-    if (existing.error || !existing.data) return res.status(404).json({ error: "Appointment not found" });
+    if (existing.error || !existing.data) return sendJsonError(res, 404, "Appointment not found", "NOT_FOUND");
     if (req.user?.role !== "super-admin" && existing.data.clinic_id !== req.user?.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
     if (req.user?.role === "receptionist") {
       const assigned = await fetchAssignedDoctorIds(req.user!);
       const gate = receptionistMustCoverDoctor(req.user!, existing.data.doctor_user_id, assigned);
-      if (gate.ok === false) return res.status(403).json({ error: gate.message });
+      if (gate.ok === false) return sendJsonError(res, 403, gate.message, "FORBIDDEN");
     }
 
     const { data, error } = await supabase
@@ -232,7 +233,7 @@ router.post(
       .select("*")
       .single();
 
-    if (error || !data) return res.status(500).json({ error: error?.message || "Failed to check in" });
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to check in", "INTERNAL_SERVER_ERROR");
 
     const event: RealtimeEvent<AppointmentDTO> = {
       type: "appointment.checked_in",

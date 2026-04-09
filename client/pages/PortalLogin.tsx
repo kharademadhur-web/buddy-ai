@@ -16,8 +16,7 @@ function getDefaultRouteForRole(role: string | undefined): string {
     case "receptionist":
       return "/reception-dashboard";
     case "clinic-admin":
-      // Clinic admin has no separate web console; reception flows match day-to-day ops.
-      return "/reception-dashboard";
+      return "/admin-dashboard/overview";
     case "super-admin":
       return "/admin-dashboard/overview";
     default:
@@ -83,7 +82,7 @@ export default function PortalLogin() {
                   id="user_id"
                   name="user_id"
                   type="text"
-                  placeholder="e.g., MUM001-DOC-10234"
+                  placeholder="User ID"
                   value={formData.user_id}
                   onChange={handleChange}
                   disabled={isLoading}

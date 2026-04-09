@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import SupabaseAuthService from "../services/supabase-auth.service";
-import OtpAuthService from "../services/otp-auth.service";
+import OtpAuthService, { normalizePhoneDigits } from "../services/otp-auth.service";
+import { getSupabaseClient } from "../config/supabase";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { rateLimit } from "../middleware/rate-limit.middleware";
 import { asyncHandler, ValidationError } from "../middleware/error-handler.middleware";
@@ -213,6 +214,82 @@ router.post(
       success: true,
       message: "Password changed successfully",
     });
+  })
+);
+
+/**
+ * POST /api/auth/password-change/request-otp
+ * Authenticated staff: OTP sent to registered phone for password change.
+ */
+router.post(
+  "/password-change/request-otp",
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) {
+      throw new ValidationError("Unauthorized");
+    }
+    const result = await OtpAuthService.sendPasswordChangeOtpForUser(req.user.userId);
+    res.json({
+      success: true,
+      sessionId: result.sessionId,
+      expiresAt: result.expiresAt,
+    });
+  })
+);
+
+/**
+ * POST /api/auth/password-change/complete
+ * Verify OTP and set new password (no old password).
+ */
+router.post(
+  "/password-change/complete",
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sessionId, otp, newPassword } = req.body as {
+      sessionId?: string;
+      otp?: string;
+      newPassword?: string;
+    };
+
+    if (!sessionId || !otp || !newPassword) {
+      throw new ValidationError("sessionId, otp, and newPassword are required");
+    }
+    if (newPassword.length < 8) {
+      throw new ValidationError("Password must be at least 8 characters");
+    }
+    if (!req.user) {
+      throw new ValidationError("Unauthorized");
+    }
+
+    const session = await OtpAuthService.verifyOtpSessionCode(sessionId, otp);
+    if (session.contact_type !== "phone") {
+      throw new ValidationError("Invalid OTP session");
+    }
+
+    const supabase = getSupabaseClient();
+    const { data: userRow } = await supabase
+      .from("users")
+      .select("phone")
+      .eq("id", req.user.userId)
+      .single();
+
+    if (!userRow?.phone) {
+      throw new ValidationError("Phone not on file");
+    }
+
+    const a = normalizePhoneDigits(session.contact);
+    const b = normalizePhoneDigits(userRow.phone);
+    if (a !== b) {
+      throw new ValidationError("OTP does not match this account");
+    }
+
+    const result = await SupabaseAuthService.setPasswordAfterOtp(req.user.userId, newPassword);
+    if (!result.success) {
+      const msg = result.error || "Failed to update password";
+      return sendJsonError(res, 400, msg, "VALIDATION_ERROR");
+    }
+
+    res.json({ success: true, message: "Password updated successfully" });
   })
 );
 

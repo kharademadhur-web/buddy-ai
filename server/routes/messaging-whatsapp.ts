@@ -7,6 +7,7 @@ import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import { sendWhatsAppMessage } from "../services/whatsapp.service";
 import { processFollowUpRemindersOnce } from "../services/reminder-worker.service";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -29,7 +30,7 @@ router.post(
     if (!parsed.success) throw new ValidationError("Invalid body");
 
     if (req.user?.role !== "super-admin" && req.user?.clinicId !== parsed.data.clinicId) {
-      return res.status(403).json({ error: "Clinic access denied" });
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
     const supabase =
@@ -42,14 +43,14 @@ router.post(
       .select("phone, name, clinic_id")
       .eq("id", parsed.data.patientId)
       .single();
-    if (pe || !patient) return res.status(404).json({ error: "Patient not found" });
+    if (pe || !patient) return sendJsonError(res, 404, "Patient not found", "NOT_FOUND");
     if (patient.clinic_id !== parsed.data.clinicId) {
-      return res.status(400).json({ error: "Patient does not belong to this clinic" });
+      return sendJsonError(res, 400, "Patient does not belong to this clinic", "VALIDATION_ERROR");
     }
 
     const result = await sendWhatsAppMessage(patient.phone, parsed.data.message);
     if (!result.success) {
-      return res.status(502).json({ error: result.error || "WhatsApp send failed" });
+      return sendJsonError(res, 502, result.error || "WhatsApp send failed", "UPSTREAM_ERROR");
     }
     return res.json({
       success: true,
@@ -68,8 +69,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     if (process.env.NODE_ENV === "production") {
       const secret = process.env.REMINDER_CRON_SECRET?.trim();
-      if (!secret || String(req.query.secret || "") !== secret) {
-        return res.status(401).json({ error: "Unauthorized" });
+      const headerSecret = String(req.headers["x-reminder-secret"] || req.headers.authorization || "")
+        .replace(/^Bearer\s+/i, "")
+        .trim();
+      const querySecret = String(req.query.secret || "").trim();
+      const provided = headerSecret || querySecret;
+      if (!secret || provided !== secret) {
+        return sendJsonError(res, 401, "Unauthorized", "UNAUTHORIZED");
       }
     }
     const r = await processFollowUpRemindersOnce();

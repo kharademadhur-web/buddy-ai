@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { asyncHandler } from "../middleware/error-handler.middleware";
 import { grokConsultationSummary, isXaiConfigured } from "../services/xai-grok.service";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get(
     }
 
     const { data, error } = await query.order("name", { ascending: true });
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, drugs: data ?? [] });
   })
 );
@@ -54,7 +55,7 @@ router.post(
   requireRole("doctor", "independent", "super-admin"),
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = suggestSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
     const supabase = getSupabaseClient();
     const take = parsed.data.limit ?? 15;
     const safeQ = parsed.data.query.replace(/[%_]/g, "").slice(0, 80);
@@ -66,7 +67,7 @@ router.post(
       .or(`name.ilike.${like},code.ilike.${like}`)
       .order("name", { ascending: true })
       .limit(take);
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, suggestions: data ?? [] });
   })
 );

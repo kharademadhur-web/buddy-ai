@@ -1,6 +1,7 @@
 import { format } from "date-fns";
-import { Phone, Calendar, Stethoscope } from "lucide-react";
+import { Phone, Calendar, Stethoscope, User } from "lucide-react";
 import { Patient, Letterhead } from "@/context/ClinicContext";
+import { queueStatusLabel } from "@/lib/queue-display";
 
 interface ActivePatientPanelProps {
   patient: Patient | null;
@@ -24,97 +25,103 @@ export default function ActivePatientPanel({
     );
   }
 
-  const activeLetterhead = letterhead ?? null;
+  const hasLetterhead = Boolean(letterhead?.templateUrl);
 
   return (
     <div className="rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div
-        className="relative w-full bg-cover bg-no-repeat p-8 min-h-96 flex flex-col justify-between"
-        style={{
-          background: activeLetterhead
-            ? activeLetterhead.templateUrl
-            : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        }}
-      >
-        <div className="absolute inset-0 bg-black/10"></div>
+      {/* ── Letterhead background (clinic branding) ── */}
+      <div className="relative w-full">
+        {hasLetterhead ? (
+          <>
+            {/* Actual letterhead image as background */}
+            <img
+              src={letterhead!.templateUrl}
+              alt="Clinic letterhead"
+              className="w-full object-cover max-h-52"
+            />
+            {/* Semi-transparent overlay so text is readable */}
+            <div className="absolute inset-0 bg-black/30" />
+          </>
+        ) : (
+          <div
+            className="w-full min-h-32"
+            style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)" }}
+          />
+        )}
 
-        <div className="relative z-10 text-white mb-8">
-          <h1 className="text-3xl font-bold">
-            {activeLetterhead?.clinicName || "Clinic"}
-          </h1>
-          {activeLetterhead?.registrationNumber && (
-            <p className="text-sm opacity-90 mt-1">
-              Reg. No: {activeLetterhead.registrationNumber}
-            </p>
-          )}
-          <p className="text-sm opacity-90 mt-1">
-            {activeLetterhead?.clinicAddress || ""}
-          </p>
-          <p className="text-sm opacity-90">
-            {activeLetterhead?.clinicPhone || ""}
-          </p>
-        </div>
-
-        <div className="relative z-10 text-white border-t border-white/30 pt-4">
-          <div className="flex items-start justify-between">
+        {/* Clinic name + doctor + date — always rendered on top of the image */}
+        <div className="absolute inset-0 flex flex-col justify-between p-5">
+          <div className="text-white">
+            <h1 className="text-xl font-bold leading-tight drop-shadow">
+              {letterhead?.clinicName || "Clinic"}
+            </h1>
+            {letterhead?.clinicAddress && (
+              <p className="text-xs opacity-90 mt-0.5">{letterhead.clinicAddress}</p>
+            )}
+            {letterhead?.clinicPhone && (
+              <p className="text-xs opacity-90">{letterhead.clinicPhone}</p>
+            )}
+          </div>
+          <div className="flex items-end justify-between text-white">
             <div>
-              <p className="text-sm opacity-90">Doctor:</p>
-              <p className="text-xl font-semibold">
-                {doctorName || activeLetterhead?.doctorName || "Doctor"}
+              <p className="text-xs opacity-80">Consulting Doctor</p>
+              <p className="text-base font-semibold drop-shadow">
+                {doctorName || letterhead?.doctorName || "Doctor"}
               </p>
-              {activeLetterhead?.specialization && (
-                <p className="text-xs opacity-75 mt-1">
-                  {activeLetterhead.specialization}
-                </p>
+              {letterhead?.specialization && (
+                <p className="text-xs opacity-75">{letterhead.specialization}</p>
               )}
             </div>
-            <div className="text-right">
-              <p className="text-xs opacity-90">Date:</p>
-              <p className="text-sm opacity-90">
-                {format(new Date(), "dd MMM yyyy")}
-              </p>
-              <p className="text-xs opacity-90">
-                {format(new Date(), "hh:mm a")}
-              </p>
+            <div className="text-right text-xs opacity-90">
+              <p>{format(new Date(), "dd MMM yyyy")}</p>
+              <p>{format(new Date(), "hh:mm a")}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white p-6 space-y-4">
-        <div className="flex items-start justify-between pb-4 border-b border-gray-200">
+      {/* ── Patient info filled by receptionist ── */}
+      <div className="bg-white p-5 space-y-4">
+        {/* Header row: name + token */}
+        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{patient.name}</h2>
-            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
+            <div className="flex items-center gap-2 mb-1">
+              <User className="w-4 h-4 text-blue-600" />
+              <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 mt-1 text-sm text-gray-600">
               <div className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                Age: {patient.age} years
+                <span>Age: <strong>{patient.age}</strong> yrs</span>
               </div>
+              {(patient as any).gender && (
+                <span className="capitalize">Sex: <strong>{(patient as any).gender}</strong></span>
+              )}
               <div className="flex items-center gap-1">
                 <Phone className="w-4 h-4" />
-                {patient.phone}
+                <span>{patient.phone}</span>
               </div>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-600 font-semibold">Token #</p>
-            <p className="text-3xl font-bold text-blue-600">{patient.token}</p>
+          <div className="text-right shrink-0 ml-4">
+            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Token</p>
+            <p className="text-3xl font-bold text-blue-600">#{patient.token}</p>
           </div>
         </div>
 
+        {/* Chief complaint / disease — written by receptionist */}
         {patient.symptoms && (
-          <div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">
-              Chief Complaints
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+            <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-1">
+              Chief Complaint (filled by Reception)
             </p>
-            <p className="text-gray-700 bg-gray-50 rounded-lg p-3 text-sm">
-              {patient.symptoms}
-            </p>
+            <p className="text-gray-800 text-sm leading-relaxed">{patient.symptoms}</p>
           </div>
         )}
 
+        {/* Status badge */}
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700">Status:</span>
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Status:</span>
           <span
             className={`px-3 py-1 rounded-full text-xs font-semibold ${
               patient.status === "active"
@@ -124,7 +131,7 @@ export default function ActivePatientPanel({
                 : "bg-amber-100 text-amber-700"
             }`}
           >
-            {patient.status.charAt(0).toUpperCase() + patient.status.slice(1)}
+            {queueStatusLabel(patient.status)}
           </span>
         </div>
       </div>

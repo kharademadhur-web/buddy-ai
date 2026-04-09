@@ -84,7 +84,10 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
 export function apiErrorMessage(json: unknown): string {
   if (!json || typeof json !== "object") return "Request failed";
-  const err = (json as { error?: unknown }).error;
+  const o = json as Record<string, unknown>;
+  if (typeof o.message === "string" && o.message.trim()) return o.message;
+
+  const err = o.error;
   if (typeof err === "string") return err;
   if (
     err &&
@@ -94,7 +97,21 @@ export function apiErrorMessage(json: unknown): string {
   ) {
     return (err as { message: string }).message;
   }
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    if (typeof e.details === "string" && e.details.trim()) return e.details;
+    if (typeof e.hint === "string" && e.hint.trim()) return e.hint;
+  }
   return "Request failed";
+}
+
+/** Safe message for catch blocks (avoids "[object Object]" from Error(non-string)). */
+export function errorMessageFromUnknown(e: unknown, fallback: string): string {
+  if (e instanceof Error) {
+    const m = e.message;
+    if (m && m !== "[object Object]") return m;
+  }
+  return fallback;
 }
 
 export async function apiFetchWithRetry(

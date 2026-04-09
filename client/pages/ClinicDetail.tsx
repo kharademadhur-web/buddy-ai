@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { apiFetch, apiErrorMessage, apiUrl, getAccessToken } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, apiUrl, getAccessToken, errorMessageFromUnknown } from "@/lib/api-base";
 import type { LetterheadFieldBox, LetterheadFieldMap } from "@shared/api";
 
 const DEFAULT_LETTERHEAD_FIELD_MAP: LetterheadFieldMap = {
@@ -72,6 +72,9 @@ export default function ClinicDetail() {
   const [assignRows, setAssignRows] = useState<Array<{ receptionist_user_id: string; doctor_user_id: string }>>([]);
   const [workflowMsg, setWorkflowMsg] = useState("");
   const [fieldMap, setFieldMap] = useState<LetterheadFieldMap>({});
+  const [payMonths, setPayMonths] = useState("1");
+  const [payLoading, setPayLoading] = useState(false);
+  const safeError = error === "[object Object]" ? "Request failed. Please refresh and try again." : error;
 
   const headers = useMemo(() => {
     const accessToken = tokens?.accessToken || sessionStorage.getItem("admin_access_token") || "";
@@ -88,7 +91,7 @@ export default function ClinicDetail() {
     try {
       const res = await apiFetch(`/api/admin/clinics/${clinicId}`, { headers });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to load clinic");
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to load clinic");
       setClinic(json.clinic);
       setAccessReason(json.clinic?.access_reason || "");
       const c = json.clinic;
@@ -96,7 +99,27 @@ export default function ClinicDetail() {
       setMaxReceptionists(c?.max_receptionists != null ? String(c.max_receptionists) : "");
       setFieldMap((c?.letterhead_field_map as LetterheadFieldMap | undefined) || {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load clinic");
+      // Fallback: some environments still fail on /api/admin/clinics/:id.
+      // Recover via list endpoint so clinic detail (including letterhead upload) remains usable.
+      try {
+        const listRes = await apiFetch("/api/admin/clinics", { headers });
+        const listJson = await listRes.json();
+        if (!listRes.ok || !listJson.success) {
+          throw new Error(apiErrorMessage(listJson) || "Failed to load clinics");
+        }
+        const match = (listJson.clinics || []).find(
+          (c: any) => c.id === clinicId || String(c.clinic_code || "").toLowerCase() === clinicId.toLowerCase()
+        );
+        if (!match) throw e;
+        setClinic(match);
+        setAccessReason(match?.access_reason || "");
+        setMaxDoctors(match?.max_doctors != null ? String(match.max_doctors) : "");
+        setMaxReceptionists(match?.max_receptionists != null ? String(match.max_receptionists) : "");
+        setFieldMap((match?.letterhead_field_map as LetterheadFieldMap | undefined) || {});
+        setError("");
+      } catch {
+        setError(errorMessageFromUnknown(e, "Failed to load clinic"));
+      }
     } finally {
       setLoading(false);
     }
@@ -110,7 +133,7 @@ export default function ClinicDetail() {
       if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to load staff");
       setStaff(json.users || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load staff");
+      setError(errorMessageFromUnknown(e, "Failed to load staff"));
     }
   }, [clinicId, headers]);
 
@@ -244,10 +267,10 @@ export default function ClinicDetail() {
         body: JSON.stringify({ ...patch, reason: accessReason }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to update access");
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to update access");
       setClinic(json.clinic);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update access");
+      setError(errorMessageFromUnknown(e, "Failed to update access"));
     } finally {
       setLoading(false);
     }
@@ -263,14 +286,36 @@ export default function ClinicDetail() {
     try {
       const res = await apiFetch(`/api/admin/kyc/doctor/${row.id}`, { headers });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to load KYC");
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to load KYC");
       setKycDocs(json.documents || null);
       setKycLicense(json.doctor?.licenseNumber ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load KYC");
+      setError(errorMessageFromUnknown(e, "Failed to load KYC"));
       setKycOpen(false);
     } finally {
       setKycLoading(false);
+    }
+  };
+
+  const recordSaasPayment = async () => {
+    if (!clinicId || !isSuperAdmin) return;
+    setPayLoading(true);
+    setError("");
+    try {
+      const months = Math.max(1, parseInt(payMonths, 10) || 1);
+      const res = await apiFetch(`/api/admin/clinics/${clinicId}/saas-payment`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ months }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(apiErrorMessage(json) || "Failed to record payment");
+      setClinic(json.clinic);
+      setWorkflowMsg("SaaS payment recorded. Subscription updated.");
+    } catch (e) {
+      setError(errorMessageFromUnknown(e, "Payment failed"));
+    } finally {
+      setPayLoading(false);
     }
   };
 
@@ -289,7 +334,7 @@ export default function ClinicDetail() {
       setResetUserId(null);
       await fetchStaff();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Reset failed");
+      setError(errorMessageFromUnknown(e, "Reset failed"));
     } finally {
       setLoading(false);
     }
@@ -307,7 +352,7 @@ export default function ClinicDetail() {
           Back to Clinics
         </button>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 sm:p-12 text-center">
-          {error ? <p className="text-red-600 text-sm mb-3">{error}</p> : null}
+          {safeError ? <p className="text-red-600 text-sm mb-3">{safeError}</p> : null}
           <p className="text-gray-600 text-base sm:text-lg">{loading ? "Loading..." : "Clinic not found"}</p>
         </div>
       </div>
@@ -325,9 +370,9 @@ export default function ClinicDetail() {
         Back to Clinics
       </button>
 
-      {error ? (
+      {safeError ? (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{safeError}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -346,6 +391,67 @@ export default function ClinicDetail() {
           <Button variant="outline" onClick={() => void fetchClinic()} disabled={loading} className="shrink-0">
             Refresh
           </Button>
+        </div>
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-gray-900">Subscription & billing</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-gray-600">Status:</span>{" "}
+              <Badge variant="secondary">{clinic.subscription_status ?? "—"}</Badge>
+            </div>
+            <div>
+              <span className="text-gray-600">Days remaining:</span>{" "}
+              <span className="font-medium">
+                {typeof clinic.days_remaining === "number" ? clinic.days_remaining : "—"}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-600">Period start:</span>{" "}
+              {clinic.subscription_started_at
+                ? new Date(clinic.subscription_started_at).toLocaleDateString("en-IN")
+                : "—"}
+            </div>
+            <div>
+              <span className="text-gray-600">Expires:</span>{" "}
+              {clinic.subscription_expires_at
+                ? new Date(clinic.subscription_expires_at).toLocaleDateString("en-IN")
+                : "—"}
+            </div>
+            <div>
+              <span className="text-gray-600">Plan (monthly):</span> ₹
+              {Number(clinic.saas_plan_amount_monthly ?? 5999).toLocaleString("en-IN")}
+            </div>
+            {clinic.last_saas_payment ? (
+              <div className="sm:col-span-2 text-xs text-gray-600">
+                Last payment: ₹{Number((clinic.last_saas_payment as { amount?: number }).amount ?? 0).toLocaleString("en-IN")}{" "}
+                on{" "}
+                {(clinic.last_saas_payment as { paid_at?: string }).paid_at
+                  ? new Date((clinic.last_saas_payment as { paid_at: string }).paid_at).toLocaleDateString("en-IN")
+                  : "—"}
+              </div>
+            ) : null}
+          </div>
+          {isSuperAdmin ? (
+            <div className="flex flex-wrap items-end gap-2 pt-2">
+              <div className="space-y-1">
+                <Label htmlFor="payMonths">Months</Label>
+                <Input
+                  id="payMonths"
+                  type="number"
+                  min={1}
+                  max={36}
+                  className="w-24"
+                  value={payMonths}
+                  onChange={(e) => setPayMonths(e.target.value)}
+                  disabled={payLoading}
+                />
+              </div>
+              <Button type="button" onClick={() => void recordSaasPayment()} disabled={payLoading}>
+                Record advance payment
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-2">

@@ -9,6 +9,7 @@ import {
   ForbiddenError,
 } from "../middleware/error-handler.middleware";
 import DeviceApprovalService from "../services/device-approval.service";
+import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
@@ -157,7 +158,7 @@ router.post(
     );
 
     if (!success) {
-      return res.status(400).json({ error: "Failed to approve device" });
+      return sendJsonError(res, 400, "Failed to approve device", "VALIDATION_ERROR");
     }
 
     res.json({
@@ -190,7 +191,7 @@ router.post(
     const success = await DeviceApprovalService.rejectDevice(requestId);
 
     if (!success) {
-      return res.status(400).json({ error: "Failed to reject device" });
+      return sendJsonError(res, 400, "Failed to reject device", "VALIDATION_ERROR");
     }
 
     res.json({
@@ -228,6 +229,16 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
+    if (!req.user) throw new ForbiddenError("Access denied");
+    const isSelf = req.user.userId === userId;
+    const isAdmin = req.user.role === "super-admin" || req.user.role === "clinic-admin";
+    if (!isSelf && !isAdmin) {
+      throw new ForbiddenError("Access denied");
+    }
+
+    if (req.user.role === "clinic-admin") {
+      await assertCanManageDeviceRequest(req, userId);
+    }
 
     const supabase = getSupabaseClient();
 

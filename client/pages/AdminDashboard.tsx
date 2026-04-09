@@ -4,7 +4,6 @@ import LetterheadManager from "@/components/LetterheadManager";
 import AdminDashboardSuperAdmin from "./AdminDashboardSuperAdmin";
 import AdminClinics from "./AdminClinics";
 import AdminUsers from "./AdminUsers";
-import AdminAnalytics from "./AdminAnalytics";
 import AdminSettings from "./AdminSettings";
 import AdminProfile from "./AdminProfile";
 import ClinicDetail from "./ClinicDetail";
@@ -55,9 +54,6 @@ export default function AdminDashboard() {
 
         {/* KYC Review */}
         <Route path="kyc" element={<AdminKycReview />} />
-
-        {/* Analytics */}
-        <Route path="analytics" element={<AdminAnalytics />} />
 
         {/* Settings */}
         <Route path="settings" element={<AdminSettings />} />

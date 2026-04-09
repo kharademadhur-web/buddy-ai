@@ -60,6 +60,19 @@ jobs:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: pnpm build
 
+      - name: SaaS core smoke (optional, token-gated)
+        if: ${{ secrets.SMOKE_ADMIN_TOKEN != '' && secrets.SMOKE_RECEPTION_TOKEN != '' && secrets.SMOKE_DOCTOR_TOKEN != '' && secrets.SMOKE_CLINIC_ID != '' && secrets.SMOKE_PATIENT_ID != '' && secrets.SMOKE_DOCTOR_USER_ID != '' }}
+        env:
+          BASE_URL: ${{ vars.SMOKE_BASE_URL || 'http://localhost:8080' }}
+          ADMIN_TOKEN: ${{ secrets.SMOKE_ADMIN_TOKEN }}
+          RECEPTION_TOKEN: ${{ secrets.SMOKE_RECEPTION_TOKEN }}
+          DOCTOR_TOKEN: ${{ secrets.SMOKE_DOCTOR_TOKEN }}
+          CLINIC_ID: ${{ secrets.SMOKE_CLINIC_ID }}
+          PATIENT_ID: ${{ secrets.SMOKE_PATIENT_ID }}
+          DOCTOR_USER_ID: ${{ secrets.SMOKE_DOCTOR_USER_ID }}
+          SKIP_MUTATION: "true"
+        run: pnpm smoke:saas-core
+
       - name: Stage deploy folder with Linux node_modules
         run: |
           mkdir -p deploy

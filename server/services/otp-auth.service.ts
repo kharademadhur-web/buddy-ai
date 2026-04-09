@@ -116,6 +116,29 @@ export class OtpAuthService {
   }
 
   /** Reception intake: prove phone without issuing login tokens or creating users. */
+  /**
+   * Send OTP to the authenticated user's phone (password change flow).
+   */
+  static async sendPasswordChangeOtpForUser(userId: string) {
+    const supabase = getSupabaseClient();
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, phone, role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error || !user?.phone) {
+      throw new Error("Phone number not on file. Contact your administrator.");
+    }
+
+    const role = String(user.role || "");
+    if (!["doctor", "independent", "receptionist", "clinic-admin"].includes(role)) {
+      throw new Error("Password change via OTP is not available for this account.");
+    }
+
+    return this.sendOtp(user.phone, "phone");
+  }
+
   static async verifyPhoneOtpForPatientProof(sessionId: string, otp: string) {
     const session = await this.verifyOtpSessionCode(sessionId, otp);
     if (session.contact_type !== "phone") {

@@ -8,6 +8,7 @@ import {
   notFoundHandler,
 } from "./middleware/error-handler.middleware";
 import { requestLogger } from "./middleware/request-logger.middleware";
+import { requireActiveClinicSubscription } from "./middleware/clinic-subscription.middleware";
 
 // Import routes
 import { handleDemo } from "./routes/demo";
@@ -26,6 +27,7 @@ import patientsV2Routes from "./routes/patients-v2";
 import staffRoutes from "./routes/staff";
 import aiClinicalRoutes from "./routes/ai-clinical";
 import messagingWhatsappRoutes from "./routes/messaging-whatsapp";
+import medicinesRoutes from "./routes/medicines";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -162,16 +164,17 @@ export async function createServer() {
   // Clinic App Routes (Doctor/Receptionist/Independent)
   // =====================
 
-  app.use("/api/appointments", appointmentsRoutes);
-  app.use("/api/queue", queueV2Routes);
-  app.use("/api/consultations", consultationsV2Routes);
-  app.use("/api/billing", billingV2Routes);
-  app.use("/api/realtime", realtimeRoutes);
-  app.use("/api/uploads", uploadsRoutes);
-  app.use("/api/patients", patientsV2Routes);
-  app.use("/api/staff", staffRoutes);
-  app.use("/api/ai", aiClinicalRoutes);
-  app.use("/api/messaging", messagingWhatsappRoutes);
+  app.use("/api/appointments", requireActiveClinicSubscription, appointmentsRoutes);
+  app.use("/api/queue", requireActiveClinicSubscription, queueV2Routes);
+  app.use("/api/consultations", requireActiveClinicSubscription, consultationsV2Routes);
+  app.use("/api/billing", requireActiveClinicSubscription, billingV2Routes);
+  app.use("/api/realtime", requireActiveClinicSubscription, realtimeRoutes);
+  app.use("/api/uploads", requireActiveClinicSubscription, uploadsRoutes);
+  app.use("/api/patients", requireActiveClinicSubscription, patientsV2Routes);
+  app.use("/api/staff", requireActiveClinicSubscription, staffRoutes);
+  app.use("/api/ai", requireActiveClinicSubscription, aiClinicalRoutes);
+  app.use("/api/messaging", requireActiveClinicSubscription, messagingWhatsappRoutes);
+  app.use("/api/medicines", requireActiveClinicSubscription, medicinesRoutes);
 
   // =====================
   // Device Approval Routes

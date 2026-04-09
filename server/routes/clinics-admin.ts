@@ -165,26 +165,150 @@ router.get(
       throw new ValidationError("Access denied");
     }
 
-    const { data: clinic, error } = await supabase
+    // Note: doctors has no direct FK to clinics (only users.clinic_id), so PostgREST cannot embed doctors(count).
+    // Accept either UUID id or clinic_code in route param for compatibility.
+    let clinic: Record<string, unknown> | null = null;
+    const byId = await supabase
       .from("clinics")
-      .select(
-        `
-        *,
-        users(count),
-        doctors(count),
-        payments(count)
-      `
-      )
+      .select("*, users(count)")
       .eq("id", clinicId)
-      .single();
+      .maybeSingle();
 
-    if (error || !clinic) {
-      throw new Error(`Clinic not found: ${error?.message}`);
+    if (byId.data) {
+      clinic = byId.data as Record<string, unknown>;
+    } else {
+      const byCode = await supabase
+        .from("clinics")
+        .select("*, users(count)")
+        .eq("clinic_code", clinicId)
+        .maybeSingle();
+      if (byCode.data) {
+        clinic = byCode.data as Record<string, unknown>;
+      }
     }
+
+    if (!clinic) {
+      throw new ValidationError("Clinic not found");
+    }
+
+    const { data: lastPayment } = await supabase
+      .from("clinic_saas_payments")
+      .select("id, amount, paid_at, period_start, period_end, status")
+      .eq("clinic_id", clinicId)
+      .order("paid_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const c = clinic;
+    const exp = c.subscription_expires_at
+      ? new Date(String(c.subscription_expires_at)).getTime()
+      : null;
+    const daysRemaining =
+      exp != null && !Number.isNaN(exp)
+        ? Math.max(0, Math.ceil((exp - Date.now()) / (86400 * 1000)))
+        : null;
 
     res.json({
       success: true,
-      clinic,
+      clinic: {
+        ...c,
+        last_saas_payment: lastPayment,
+        days_remaining: daysRemaining,
+      },
+    });
+  })
+);
+
+/**
+ * POST /api/admin/clinics/:clinicId/saas-payment
+ * Record advance SaaS payment (super-admin); extends subscription_expires_at.
+ */
+router.post(
+  "/:clinicId/saas-payment",
+  authMiddleware,
+  requireSuperAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { clinicId } = req.params;
+    const { amount, months, notes } = req.body as {
+      amount?: number;
+      months?: number;
+      notes?: string;
+    };
+
+    const supabase = getSupabaseClient();
+    const adminUserId = req.user?.userId;
+
+    const { data: clinic, error: cErr } = await supabase
+      .from("clinics")
+      .select("*")
+      .eq("id", clinicId)
+      .maybeSingle();
+
+    if (cErr || !clinic) {
+      throw new ValidationError("Clinic not found");
+    }
+
+    const amt =
+      amount != null && !Number.isNaN(Number(amount))
+        ? Number(amount)
+        : Number((clinic as { saas_plan_amount_monthly?: number }).saas_plan_amount_monthly ?? 5999);
+    const nMonths = Math.max(1, Math.min(36, parseInt(String(months ?? 1), 10) || 1));
+
+    const now = new Date();
+    let periodStart = new Date(now);
+    const currentEnd = (clinic as { subscription_expires_at?: string | null })
+      .subscription_expires_at
+      ? new Date((clinic as { subscription_expires_at: string }).subscription_expires_at)
+      : null;
+    if (currentEnd && currentEnd.getTime() > now.getTime()) {
+      periodStart = currentEnd;
+    }
+
+    const periodEnd = new Date(periodStart);
+    periodEnd.setMonth(periodEnd.getMonth() + nMonths);
+
+    const { error: payErr } = await supabase.from("clinic_saas_payments").insert({
+      clinic_id: clinicId,
+      amount: amt,
+      paid_at: now.toISOString(),
+      period_start: periodStart.toISOString(),
+      period_end: periodEnd.toISOString(),
+      status: "completed",
+      notes: notes ?? null,
+      created_by: adminUserId ?? null,
+    });
+
+    if (payErr) {
+      throw new Error(`Failed to record payment: ${payErr.message}`);
+    }
+
+    const patch: Record<string, unknown> = {
+      subscription_status: "live",
+      subscription_expires_at: periodEnd.toISOString(),
+      updated_at: now.toISOString(),
+    };
+    if (!(clinic as { subscription_started_at?: string | null }).subscription_started_at) {
+      patch.subscription_started_at = periodStart.toISOString();
+    }
+
+    const { data: updated, error: upErr } = await supabase
+      .from("clinics")
+      .update(patch)
+      .eq("id", clinicId)
+      .select()
+      .single();
+
+    if (upErr || !updated) {
+      throw new Error(`Failed to update clinic: ${upErr?.message}`);
+    }
+
+    res.status(201).json({
+      success: true,
+      clinic: updated,
+      period: {
+        start: periodStart.toISOString(),
+        end: periodEnd.toISOString(),
+      },
     });
   })
 );
@@ -291,7 +415,7 @@ router.put(
     // Also maintain legacy status field(s)
     if (typeof is_suspended === "boolean") {
       patch.status = is_suspended ? "inactive" : "active";
-      patch.subscription_status = is_suspended ? "inactive" : "active";
+      patch.subscription_status = is_suspended ? "suspended" : "live";
     }
 
     const { data: clinic, error } = await supabase

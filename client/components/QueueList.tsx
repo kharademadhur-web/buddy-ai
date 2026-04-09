@@ -1,6 +1,7 @@
 import { Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient } from "@/context/ClinicContext";
+import { queueStatusLabel } from "@/lib/queue-display";
 
 export interface QueueRow {
   appointmentId: string;
@@ -81,18 +82,29 @@ export default function QueueList({
                       </p>
                     )}
                   </div>
-                  <div
-                    className={cn(
-                      "flex-shrink-0 rounded-full p-2",
-                      statusConfig[patient.status].bg
-                    )}
-                  >
-                    <StatusIcon
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span
                       className={cn(
-                        "w-5 h-5",
+                        "text-[10px] font-bold tracking-wide px-2 py-0.5 rounded",
+                        statusConfig[patient.status].bg,
                         statusConfig[patient.status].color
                       )}
-                    />
+                    >
+                      {queueStatusLabel(patient.status)}
+                    </span>
+                    <div
+                      className={cn(
+                        "rounded-full p-2",
+                        statusConfig[patient.status].bg
+                      )}
+                    >
+                      <StatusIcon
+                        className={cn(
+                          "w-5 h-5",
+                          statusConfig[patient.status].color
+                        )}
+                      />
+                    </div>
                   </div>
                 </div>
               </button>

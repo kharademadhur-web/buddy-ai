@@ -24,6 +24,7 @@
     "format.fix": "prettier --write .",
     "typecheck": "tsc",
     "smoke:workflow": "tsx server/scripts/smoke-workflow.ts",
+    "smoke:saas-core": "tsx server/scripts/smoke-saas-core.ts",
     "verify:deployment": "tsx server/scripts/verify-deployment-readiness.ts",
     "verify:supabase": "node scripts/verify-supabase-production.mjs",
     "smoke:live": "node scripts/smoke-live.mjs"

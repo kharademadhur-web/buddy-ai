@@ -42,7 +42,7 @@ export default function AdminLogin() {
         loggedIn.role === "super-admin"
           ? "/admin-dashboard/overview"
           : loggedIn.role === "clinic-admin"
-            ? "/reception-dashboard"
+            ? "/admin-dashboard/overview"
             : loggedIn.role === "doctor" || loggedIn.role === "independent"
               ? "/doctor-dashboard"
               : loggedIn.role === "receptionist"
@@ -61,7 +61,7 @@ export default function AdminLogin() {
         {/* Logo/Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Clinic Admin</h1>
-          <p className="text-gray-600">Estrellx Clinic Management System</p>
+          <p className="text-gray-600">Smart Medical Clinic Management System</p>
         </div>
 
         {/* Login Card */}
@@ -89,13 +89,12 @@ export default function AdminLogin() {
                   id="user_id"
                   name="user_id"
                   type="text"
-                  placeholder="e.g., MUM001-DOC-10234"
+                  placeholder="User ID"
                   value={formData.user_id}
                   onChange={handleChange}
                   disabled={isLoading}
                   className="font-mono"
                 />
-                <p className="text-xs text-gray-500">Format: CLINICCODE-ROLE-NUMBER</p>
               </div>
 
               {/* Password Input */}
@@ -138,7 +137,7 @@ export default function AdminLogin() {
 
         {/* Footer */}
         <div className="text-center mt-6 text-sm text-gray-600">
-          <p>© 2024 Estrellx. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} SmartClinic. All rights reserved.</p>
         </div>
       </div>
     </div>

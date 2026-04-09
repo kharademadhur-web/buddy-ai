@@ -63,7 +63,6 @@ export default function Sidebar({ role }: SidebarProps) {
         ]
       },
       { icon: Users, label: "Users", path: "/admin-dashboard/users" },
-      { icon: BarChart3, label: "Analytics", path: "/admin-dashboard/analytics" },
       { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
     ],
   };

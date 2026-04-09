@@ -1,9 +1,5 @@
 import { RequestHandler } from "express";
-import {
-  generateClinicCode,
-  generateUserIdUnique,
-  incrementUserIdCounter,
-} from "../services/user-id-generator.service";
+import { generateClinicCode, generateUserIdUnique } from "../services/user-id-generator.service";
 import {
   generateCredentials,
   logCredentialGeneration,
@@ -119,7 +115,7 @@ export const addDoctor: RequestHandler = asyncHandler(async (req, res) => {
   }
 
   // Generate unique user ID
-  const user_id = await generateUserIdUnique(clinic.clinic_code, "doctor");
+  const user_id = await generateUserIdUnique(clinic.clinic_code, clinic_id, "doctor");
 
   // Generate credentials
   const credentials = await generateCredentials(user_id);
@@ -161,9 +157,6 @@ export const addDoctor: RequestHandler = asyncHandler(async (req, res) => {
   if (doctorError || !doctor) {
     console.error("Doctor profile creation error:", doctorError);
   }
-
-  // Increment counter for next user
-  await incrementUserIdCounter(clinic.clinic_code, "doctor");
 
   // Log the action
   await logCredentialGeneration(user.id, "created");
@@ -218,7 +211,7 @@ export const addReceptionist: RequestHandler = asyncHandler(async (req, res) => 
   }
 
   // Generate unique user ID
-  const user_id = await generateUserIdUnique(clinic.clinic_code, "receptionist");
+  const user_id = await generateUserIdUnique(clinic.clinic_code, clinic_id, "receptionist");
 
   // Generate credentials
   const credentials = await generateCredentials(user_id);
@@ -254,9 +247,6 @@ export const addReceptionist: RequestHandler = asyncHandler(async (req, res) => 
   if (receptionistError) {
     console.error("Receptionist profile creation error:", receptionistError);
   }
-
-  // Increment counter for next user
-  await incrementUserIdCounter(clinic.clinic_code, "receptionist");
 
   // Log the action
   await logCredentialGeneration(user.id, "created");

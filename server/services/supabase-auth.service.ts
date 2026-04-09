@@ -6,6 +6,11 @@ import {
   JWTPayload,
 } from "../config/jwt";
 import DeviceApprovalService from "./device-approval.service";
+import {
+  requiresClinicSubscriptionCheck,
+  getClinicLoginDenialMessage,
+  syncClinicPaymentDueIfExpired,
+} from "../lib/clinic-subscription-access";
 
 export interface LoginRequest {
   user_id: string; // e.g., MUM001-DOC-10234
@@ -160,6 +165,27 @@ export class SupabaseAuthService {
       // Check if user is active
       if (!user.is_active) {
         return { success: false, error: "User account is inactive" };
+      }
+
+      // SaaS subscription: clinic staff requires active prepaid subscription
+      if (requiresClinicSubscriptionCheck(user.role)) {
+        if (!user.clinic_id) {
+          return {
+            success: false,
+            error: "Invalid account configuration. Contact support.",
+          };
+        }
+        await syncClinicPaymentDueIfExpired(supabase, user.clinic_id);
+        const { data: clinicRow } = await supabase
+          .from("clinics")
+          .select("id, subscription_status, subscription_expires_at, subscription_started_at")
+          .eq("id", user.clinic_id)
+          .maybeSingle();
+
+        const denial = getClinicLoginDenialMessage(clinicRow as any);
+        if (denial) {
+          return { success: false, error: denial };
+        }
       }
 
       if (user.role !== "super-admin" && !deviceId) {
@@ -391,6 +417,32 @@ export class SupabaseAuthService {
     } catch (error) {
       console.error("Password reset error:", error);
       return false;
+    }
+  }
+
+  /**
+   * Set password after verified phone OTP (no old password).
+   */
+  static async setPasswordAfterOtp(
+    userId: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const supabase = getSupabaseClient();
+    try {
+      const newPasswordHash = await hashPassword(newPassword);
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          password_hash: newPasswordHash,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+
+      if (updateError) throw updateError;
+      return { success: true };
+    } catch (error) {
+      console.error("setPasswordAfterOtp error:", error);
+      return { success: false, error: "Failed to update password" };
     }
   }
 

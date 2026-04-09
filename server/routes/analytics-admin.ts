@@ -8,6 +8,7 @@ import {
   aggregateBillsTrends,
   clinicBillStats,
 } from "../services/bill-analytics.service";
+import { syncClinicPaymentDueIfExpired } from "../lib/clinic-subscription-access";
 
 const router = Router();
 
@@ -83,7 +84,9 @@ router.get(
 
     let clinicsQuery = supabase
       .from("clinics")
-      .select("id, name, clinic_code, subscription_status");
+      .select(
+        "id, name, clinic_code, subscription_status, subscription_expires_at, subscription_started_at, saas_plan_amount_monthly, created_at"
+      );
     if (scoped) clinicsQuery = clinicsQuery.eq("id", scoped);
 
     const { data: clinics, error: clinicsError } = await clinicsQuery;
@@ -206,6 +209,179 @@ router.get(
       success: true,
       logs: logs || [],
       count: logs?.length || 0,
+    });
+  })
+);
+
+/**
+ * GET /api/admin/analytics/saas-summary
+ * Dashboard KPIs: clinics by status, monthly SaaS revenue (subscription payments).
+ */
+router.get(
+  "/saas-summary",
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const supabase = getSupabaseClient();
+    const scopedClinic =
+      req.user?.role === "clinic-admin" ? req.user.clinicId ?? undefined : undefined;
+
+    let liveQ = supabase.from("clinics").select("id").eq("subscription_status", "live");
+    if (scopedClinic) liveQ = liveQ.eq("id", scopedClinic);
+    const { data: liveRows } = await liveQ;
+    for (const r of liveRows || []) {
+      await syncClinicPaymentDueIfExpired(supabase, r.id);
+    }
+
+    let allQ = supabase
+      .from("clinics")
+      .select("id, subscription_status, subscription_expires_at, created_at");
+    if (scopedClinic) allQ = allQ.eq("id", scopedClinic);
+    const { data: allClinics, error: cErr } = await allQ;
+
+    if (cErr) {
+      throw new Error(`Failed to fetch clinics: ${cErr.message}`);
+    }
+
+    const list = allClinics || [];
+    const totalClinics = list.length;
+    const now = new Date();
+    const liveCount = list.filter((c: any) => {
+      if (c.subscription_status !== "live") return false;
+      const exp = c.subscription_expires_at ? new Date(c.subscription_expires_at).getTime() : null;
+      return exp != null && !Number.isNaN(exp) && exp >= now.getTime();
+    }).length;
+    const suspendedCount = list.filter((c: any) => c.subscription_status === "suspended").length;
+    const paymentDueCount = list.filter((c: any) => {
+      if (c.subscription_status === "payment_due") return true;
+      if (c.subscription_status === "live" && c.subscription_expires_at) {
+        return new Date(c.subscription_expires_at).getTime() < now.getTime();
+      }
+      return false;
+    }).length;
+
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+
+    let payQ = supabase
+      .from("clinic_saas_payments")
+      .select("amount, status")
+      .eq("status", "completed")
+      .gte("paid_at", monthStart)
+      .lte("paid_at", monthEnd);
+    if (scopedClinic) payQ = payQ.eq("clinic_id", scopedClinic);
+    const { data: monthPayments, error: pErr } = await payQ;
+
+    if (pErr) {
+      throw new Error(`Failed to fetch SaaS payments: ${pErr.message}`);
+    }
+
+    const monthlyRevenueSaaS = (monthPayments || []).reduce(
+      (sum, row: { amount?: number }) => sum + Number(row.amount ?? 0),
+      0
+    );
+
+    res.json({
+      success: true,
+      summary: {
+        totalClinics,
+        liveClinics: liveCount,
+        suspendedClinics: suspendedCount,
+        paymentDueClinics: paymentDueCount,
+        monthlyRevenueSaaS,
+        month: monthKey,
+      },
+    });
+  })
+);
+
+/**
+ * GET /api/admin/analytics/saas-payments
+ * Paginated payment history for dashboard.
+ */
+router.get(
+  "/saas-payments",
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const supabase = getSupabaseClient();
+    const limit = Math.min(100, parseInt((req.query.limit as string) || "50", 10));
+    const { month } = req.query as { month?: string };
+    const scopedClinic =
+      req.user?.role === "clinic-admin" ? req.user.clinicId ?? undefined : undefined;
+
+    let q = supabase
+      .from("clinic_saas_payments")
+      .select(
+        `
+        id, clinic_id, amount, currency, paid_at, period_start, period_end, status, notes, created_at,
+        clinics(name, clinic_code)
+      `
+      )
+      .order("paid_at", { ascending: false })
+      .limit(limit);
+
+    if (scopedClinic) q = q.eq("clinic_id", scopedClinic);
+
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split("-").map((x) => parseInt(x, 10));
+      const start = new Date(y, m - 1, 1).toISOString();
+      const end = new Date(y, m, 0, 23, 59, 59, 999).toISOString();
+      q = q.gte("paid_at", start).lte("paid_at", end);
+    }
+
+    const { data: rows, error } = await q;
+    if (error) {
+      throw new Error(`Failed to fetch payments: ${error.message}`);
+    }
+
+    res.json({
+      success: true,
+      payments: rows || [],
+    });
+  })
+);
+
+/**
+ * GET /api/admin/analytics/onboarding-clinics
+ * Clinics for calendar / new onboards (created_at, pending = not yet paid).
+ */
+router.get(
+  "/onboarding-clinics",
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const supabase = getSupabaseClient();
+    const days = Math.min(90, parseInt((req.query.days as string) || "30", 10));
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const scopedClinic =
+      req.user?.role === "clinic-admin" ? req.user.clinicId ?? undefined : undefined;
+
+    let oq = supabase
+      .from("clinics")
+      .select(
+        "id, name, clinic_code, created_at, subscription_status, subscription_expires_at, subscription_started_at"
+      )
+      .gte("created_at", since.toISOString())
+      .order("created_at", { ascending: false });
+    if (scopedClinic) oq = oq.eq("id", scopedClinic);
+
+    const { data: clinics, error } = await oq;
+
+    if (error) {
+      throw new Error(`Failed to fetch clinics: ${error.message}`);
+    }
+
+    const pendingOnboards = (clinics || []).filter(
+      (c: any) => c.subscription_status === "pending" || c.subscription_status === "payment_due"
+    );
+
+    res.json({
+      success: true,
+      clinics: clinics || [],
+      pendingCount: pendingOnboards.length,
     });
   })
 );
