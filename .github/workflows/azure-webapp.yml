@@ -39,11 +39,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # No `version:` here — action reads exact pnpm from package.json "packageManager" (incl. sha512),
+      # avoiding "Multiple versions of pnpm" vs a plain semver.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          # Must match package.json "packageManager" (pnpm@10.14.0) — avoid "Multiple versions of pnpm"
-          version: 10.14.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
