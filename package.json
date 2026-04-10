@@ -27,7 +27,8 @@
     "smoke:saas-core": "tsx server/scripts/smoke-saas-core.ts",
     "verify:deployment": "tsx server/scripts/verify-deployment-readiness.ts",
     "verify:supabase": "node scripts/verify-supabase-production.mjs",
-    "smoke:live": "node scripts/smoke-live.mjs"
+    "smoke:live": "node scripts/smoke-live.mjs",
+    "secrets:github": "node scripts/push-github-secrets.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",

@@ -35,3 +35,8 @@ app_logs*/
 app_logs*.zip
 deploy*.zip
 deploy_pkg/
+
+# GitHub Actions secret upload helpers (never commit)
+scripts/github-actions-secrets.local.env
+publish-profile.xml
+*.PublishSettings
