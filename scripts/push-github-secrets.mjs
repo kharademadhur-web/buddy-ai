@@ -10,7 +10,7 @@
  * 3. From repo root: node scripts/push-github-secrets.mjs
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
@@ -66,10 +66,29 @@ for (const k of required) {
 }
 
 const profileRel = vars.PUBLISH_PROFILE_PATH?.trim() || "publish-profile.xml";
-const profilePath = resolve(root, profileRel);
+let profilePath = resolve(root, profileRel);
+
 if (!existsSync(profilePath)) {
-  console.error("Publish profile not found:", profilePath);
-  console.error("Azure Portal → App Service → Get publish profile → save as that file.");
+  const candidates = readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => d.name)
+    .filter((f) => /\.(PublishSettings|publishsettings)$/i.test(f));
+  if (candidates.length === 1) {
+    profilePath = resolve(root, candidates[0]);
+    console.log("Using Azure file in repo root:", candidates[0]);
+  } else if (candidates.length > 1) {
+    console.error("Multiple .PublishSettings files in repo root. Set PUBLISH_PROFILE_PATH in github-actions-secrets.local.env to the one you want.");
+    process.exit(1);
+  }
+}
+
+if (!existsSync(profilePath)) {
+  console.error("Publish profile not found.");
+  console.error("1. Azure Portal → your App Service → top bar: Get publish profile (downloads a .PublishSettings file).");
+  console.error("2. Move that file into this folder:");
+  console.error("   " + root);
+  console.error("3. Either rename it to publish-profile.xml OR set PUBLISH_PROFILE_PATH=YourApp.PublishSettings in github-actions-secrets.local.env");
+  console.error("4. Run: pnpm secrets:github");
   process.exit(1);
 }
 
