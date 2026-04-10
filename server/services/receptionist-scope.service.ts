@@ -1,15 +1,16 @@
-import { getSupabaseRlsClient } from "../config/supabase";
-import { signSupabaseRlsJwt } from "../config/supabase-jwt";
+import { getSupabaseClient } from "../config/supabase";
 import type { JWTPayload } from "../config/jwt";
 
 /**
  * Doctor UUIDs this receptionist may work with (same clinic). Empty if not receptionist or error.
+ * Uses service-role Supabase (server-only): RLS often blocks receptionists reading assignment rows
+ * even for themselves; filters are strictly the verified JWT userId + clinicId.
  */
 export async function fetchAssignedDoctorIds(user: JWTPayload): Promise<string[]> {
   if (user.role !== "receptionist" || !user.clinicId) {
     return [];
   }
-  const supabase = getSupabaseRlsClient(signSupabaseRlsJwt(user));
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("receptionist_doctor_assignments")
     .select("doctor_user_id")

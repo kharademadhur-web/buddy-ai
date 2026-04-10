@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Loader2, Building2 } from "lucide-react";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 
 interface DoctorOption {
@@ -46,9 +46,20 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
     (async () => {
       const res = await apiFetch(`/api/staff/doctors?clinicId=${encodeURIComponent(clinicId)}`);
       const j = await res.json();
-      if (res.ok && j.success && j.doctors?.length) {
+      if (!res.ok) {
+        setError(apiErrorMessage(j));
+        setDoctors([]);
+        return;
+      }
+      if (j.success && j.doctors?.length) {
         setDoctors(j.doctors.map((d: { id: string; name: string }) => ({ id: d.id, name: d.name })));
         setDoctorUserId((prev: string) => prev || j.doctors[0].id);
+        setError(null);
+      } else {
+        setDoctors([]);
+        setError(
+          "No doctors available. Ask your admin to add doctors and assign them to your receptionist account in User Management."
+        );
       }
     })();
   }, [clinicId]);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
 import type { AppointmentDTO, PatientDTO } from "@shared/api";
 
 export function ageFromDob(dob: string | null | undefined): number {
@@ -33,13 +33,13 @@ export function useQueueAndPatients(
       if (doctorUserId) qs.set("doctorId", doctorUserId);
       const res = await apiFetch(`/api/queue?${qs.toString()}`);
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Failed to load queue");
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Failed to load queue");
       const list: AppointmentDTO[] = j.queue || [];
       setQueue(list);
 
       const pres = await apiFetch(`/api/patients?clinicId=${encodeURIComponent(clinicId)}&limit=50`);
       const pj = await pres.json();
-      if (!pres.ok) throw new Error(pj.error || "Failed to load patients");
+      if (!pres.ok) throw new Error(apiErrorMessage(pj) || "Failed to load patients");
       const map: Record<string, PatientDTO> = {};
       for (const p of pj.patients || []) map[p.id] = p;
       setPatientsById(map);
