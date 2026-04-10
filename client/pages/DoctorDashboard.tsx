@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export default function DoctorDashboard() {
+  const location = useLocation();
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId, {
@@ -69,6 +71,27 @@ export default function DoctorDashboard() {
   const [pwNew2, setPwNew2] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState("");
+
+  // Sidebar links: /doctor-dashboard#queue | #rx | #analytics | #settings
+  useEffect(() => {
+    const raw = location.hash.replace(/^#/, "");
+    if (!raw) return;
+    const h = raw.toLowerCase();
+    const scroll = (id: string) =>
+      window.requestAnimationFrame(() =>
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
+    if (h === "queue") scroll("staff-queue");
+    if (h === "rx" || h === "prescription") {
+      setActiveTab("prescription");
+      scroll("staff-prescription");
+    }
+    if (h === "analytics" || h === "reports") {
+      setActiveTab("reports");
+      scroll("staff-reports");
+    }
+    if (h === "settings") scroll("staff-settings");
+  }, [location.hash]);
 
   const requestPasswordOtp = async () => {
     setPwError("");
@@ -219,7 +242,13 @@ export default function DoctorDashboard() {
         <div className="p-4 sm:p-6 lg:p-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
-            <Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => setPwOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 gap-2"
+              id="staff-settings"
+              onClick={() => setPwOpen(true)}
+            >
               <KeyRound className="h-4 w-4" />
               Change password
             </Button>
@@ -308,7 +337,7 @@ export default function DoctorDashboard() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-            <div className="lg:col-span-1 order-2 lg:order-1">
+            <div id="staff-queue" className="lg:col-span-1 order-2 lg:order-1 scroll-mt-24">
               <QueueList
                 rows={rows}
                 onPatientSelect={handleSelectPatient}
@@ -356,7 +385,10 @@ export default function DoctorDashboard() {
               )}
 
               {activePatient && selectedAppt && activeTab === "prescription" && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6">
+                <div
+                  id="staff-prescription"
+                  className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 scroll-mt-24"
+                >
                   <h3 className="text-lg font-bold text-gray-900 mb-4">
                     Clinical Notes & Prescription
                   </h3>
@@ -416,11 +448,13 @@ export default function DoctorDashboard() {
               )}
 
               {activePatient && selectedAppt && activeTab === "reports" && clinicId && (
-                <ReportsTab
-                  patientId={activePatient.id}
-                  patientName={activePatient.name}
-                  clinicId={clinicId}
-                />
+                <div id="staff-reports" className="scroll-mt-24">
+                  <ReportsTab
+                    patientId={activePatient.id}
+                    patientName={activePatient.name}
+                    clinicId={clinicId}
+                  />
+                </div>
               )}
             </div>
           </div>

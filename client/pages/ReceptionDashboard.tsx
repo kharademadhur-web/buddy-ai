@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { useQueueAndPatients, useBillingSummary } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
@@ -10,6 +11,7 @@ import { Users, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ReceptionDashboard() {
+  const location = useLocation();
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId);
@@ -26,13 +28,29 @@ export default function ReceptionDashboard() {
   const completedToday = summary?.completedToday ?? 0;
   const totalCollected = summary?.totalCollected ?? 0;
 
+  // Sidebar: /reception-dashboard#queue | #rx (intake) | #settings
+  useEffect(() => {
+    const raw = location.hash.replace(/^#/, "");
+    if (!raw) return;
+    const h = raw.toLowerCase();
+    const scroll = (id: string) =>
+      window.requestAnimationFrame(() =>
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
+    if (h === "queue") scroll("staff-queue");
+    if (h === "rx" || h === "prescription") scroll("staff-intake");
+    if (h === "settings") scroll("staff-settings");
+  }, [location.hash]);
+
   return (
     <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
       <Sidebar role="reception" />
 
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Reception Dashboard</h1>
+          <h1 id="staff-settings" className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8 scroll-mt-24">
+            Reception Dashboard
+          </h1>
 
           {!clinicId && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
@@ -102,6 +120,7 @@ export default function ReceptionDashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
             <div className="space-y-6">
+              <div id="staff-intake" className="scroll-mt-24">
               <PatientForm
                 onSuccess={() => {
                   toast.success("Patient registered and checked in");
@@ -113,9 +132,10 @@ export default function ReceptionDashboard() {
                 clinicId={clinicId}
                 onPaid={() => void refetchSummary()}
               />
+              </div>
             </div>
 
-            <div className="lg:col-span-2">
+            <div id="staff-queue" className="lg:col-span-2 scroll-mt-24">
               <QueueList
                 rows={rows}
                 onPatientSelect={(_pid, aid) => setSelectedAppointmentId(aid)}
