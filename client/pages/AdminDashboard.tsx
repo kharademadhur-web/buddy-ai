@@ -1,7 +1,8 @@
-﻿import { useLocation, Routes, Route, Navigate, Outlet } from "react-router-dom";
+﻿import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
-import LetterheadManager from "@/components/LetterheadManager";
 import AdminDashboardSuperAdmin from "./AdminDashboardSuperAdmin";
+import AdminAnalytics from "./AdminAnalytics";
+import AdminClinicDailySummary from "./AdminClinicDailySummary";
 import AdminClinics from "./AdminClinics";
 import AdminUsers from "./AdminUsers";
 import AdminSettings from "./AdminSettings";
@@ -10,11 +11,12 @@ import ClinicDetail from "./ClinicDetail";
 import AdminOnboarding from "./AdminOnboarding";
 import AdminKycReview from "./AdminKycReview";
 import AdminDeviceApprovals from "./AdminDeviceApprovals";
+import { useAdminAuth } from "@/context/AdminAuthContext";
 
 function AdminDashboardLayout() {
-  const location = useLocation();
-
-  const isClinicDetailRoute = location.pathname.includes("/clinic/");
+  const { user } = useAdminAuth();
+  const portalTitle =
+    user?.role === "clinic-admin" ? "Clinic admin portal" : "Super admin portal";
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
@@ -22,7 +24,7 @@ function AdminDashboardLayout() {
       <Sidebar role="admin" />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0"><div className="p-4 sm:p-6 lg:p-8"><h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Super Admin Portal</h1>
+      <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0"><div className="p-4 sm:p-6 lg:p-8"><h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">{portalTitle}</h1>
 
           {/* Routes */}
           <Outlet />
@@ -41,6 +43,10 @@ export default function AdminDashboard() {
 
         {/* Overview */}
         <Route path="overview" element={<AdminDashboardSuperAdmin />} />
+
+        <Route path="analytics" element={<AdminAnalytics />} />
+
+        <Route path="daily-summary" element={<AdminClinicDailySummary />} />
 
         {/* Clinics */}
         <Route path="clinics" element={<AdminClinics />} />

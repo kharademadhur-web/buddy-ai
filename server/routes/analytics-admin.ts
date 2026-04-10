@@ -235,7 +235,7 @@ router.get(
 
     let allQ = supabase
       .from("clinics")
-      .select("id, subscription_status, subscription_expires_at, created_at");
+      .select("id, name, clinic_code, subscription_status, subscription_expires_at, created_at");
     if (scopedClinic) allQ = allQ.eq("id", scopedClinic);
     const { data: allClinics, error: cErr } = await allQ;
 
@@ -244,8 +244,38 @@ router.get(
     }
 
     const list = allClinics || [];
-    const totalClinics = list.length;
     const now = new Date();
+
+    const atRiskClinics = list
+      .map((c: any) => {
+        const nowMs = now.getTime();
+        if (c.subscription_status === "payment_due") {
+          return {
+            id: c.id,
+            name: c.name,
+            clinic_code: c.clinic_code,
+            subscription_status: c.subscription_status,
+            subscription_expires_at: c.subscription_expires_at,
+            reason: "payment_due" as const,
+          };
+        }
+        if (c.subscription_status === "live" && c.subscription_expires_at) {
+          const exp = new Date(c.subscription_expires_at).getTime();
+          if (!Number.isNaN(exp) && exp < nowMs) {
+            return {
+              id: c.id,
+              name: c.name,
+              clinic_code: c.clinic_code,
+              subscription_status: c.subscription_status,
+              subscription_expires_at: c.subscription_expires_at,
+              reason: "subscription_expired" as const,
+            };
+          }
+        }
+        return null;
+      })
+      .filter(Boolean);
+    const totalClinics = list.length;
     const liveCount = list.filter((c: any) => {
       if (c.subscription_status !== "live") return false;
       const exp = c.subscription_expires_at ? new Date(c.subscription_expires_at).getTime() : null;
@@ -292,6 +322,7 @@ router.get(
         monthlyRevenueSaaS,
         month: monthKey,
       },
+      atRiskClinics,
     });
   })
 );

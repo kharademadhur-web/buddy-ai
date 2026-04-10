@@ -5,8 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Building2, TrendingUp, AlertCircle, Loader2, IndianRupee, Ban, Clock } from "lucide-react";
-import { apiFetch } from "@/lib/api-base";
+import { Building2, TrendingUp, AlertCircle, Loader2, IndianRupee, Ban, Clock, AlertTriangle } from "lucide-react";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 import { OnboardingCalendar } from "@/components/OnboardingCalendar";
 
 interface SaasSummary {
@@ -34,12 +34,22 @@ interface OnboardClinic {
   subscription_status?: string;
 }
 
+interface AtRiskClinic {
+  id: string;
+  name: string;
+  clinic_code: string;
+  subscription_status?: string;
+  subscription_expires_at?: string | null;
+  reason: "payment_due" | "subscription_expired";
+}
+
 export default function AdminDashboardSuperAdmin() {
   const { user } = useAdminAuth();
   const [summary, setSummary] = useState<SaasSummary | null>(null);
   const [payments, setPayments] = useState<SaasPaymentRow[]>([]);
   const [onboards, setOnboards] = useState<OnboardClinic[]>([]);
   const [pendingOnboardCount, setPendingOnboardCount] = useState(0);
+  const [atRiskClinics, setAtRiskClinics] = useState<AtRiskClinic[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,20 +70,27 @@ export default function AdminDashboardSuperAdmin() {
         const sJson = await sRes.json();
         if (sRes.ok && sJson.success && sJson.summary) {
           setSummary(sJson.summary);
+          setAtRiskClinics(Array.isArray(sJson.atRiskClinics) ? sJson.atRiskClinics : []);
+        } else {
+          setError(apiErrorMessage(sJson));
         }
 
         const pJson = await pRes.json();
         if (pRes.ok && pJson.success) {
           setPayments(pJson.payments || []);
+        } else {
+          setError((prev) => prev || apiErrorMessage(pJson));
         }
 
         const oJson = await oRes.json();
         if (oRes.ok && oJson.success) {
           setOnboards(oJson.clinics || []);
           setPendingOnboardCount(oJson.pendingCount ?? 0);
+        } else {
+          setError((prev) => prev || apiErrorMessage(oJson));
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load dashboard");
+        setError(errorMessageFromUnknown(err, "Failed to load dashboard"));
       } finally {
         setIsLoading(false);
       }
@@ -164,6 +181,86 @@ export default function AdminDashboardSuperAdmin() {
           </CardContent>
         </Card>
       </div>
+
+      {(user?.role === "super-admin" || atRiskClinics.length > 0) && (
+        <Card id="at-risk-subscriptions">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  At-risk subscriptions
+                </CardTitle>
+                <CardDescription>
+                  Clinics marked payment due or with an expired subscription end date. Open the clinic to
+                  record a SaaS payment or update status.
+                </CardDescription>
+              </div>
+              {summary != null && summary.paymentDueClinics > 0 ? (
+                <Badge variant="destructive" className="shrink-0">
+                  {summary.paymentDueClinics} need attention
+                </Badge>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {atRiskClinics.length === 0 ? (
+              <p className="text-sm text-gray-600">
+                No clinics are in payment due or expired subscription state right now.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-600">
+                      <th className="py-2 pr-2">Clinic</th>
+                      <th className="py-2 pr-2">Reason</th>
+                      <th className="py-2 pr-2">Status</th>
+                      <th className="py-2">Expires</th>
+                      <th className="py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {atRiskClinics.map((c) => (
+                      <tr key={c.id} className="border-b border-gray-100">
+                        <td className="py-2 pr-2">
+                          <Link
+                            to={`/admin-dashboard/clinic/${c.id}`}
+                            className="font-medium text-blue-700 hover:underline"
+                          >
+                            {c.name}
+                          </Link>
+                          <div className="text-xs font-mono text-gray-500">{c.clinic_code}</div>
+                        </td>
+                        <td className="py-2 pr-2">
+                          {c.reason === "payment_due" ? (
+                            <span className="text-amber-800">Payment due</span>
+                          ) : (
+                            <span className="text-red-800">Subscription expired</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-2">
+                          <Badge variant="outline">{c.subscription_status ?? "—"}</Badge>
+                        </td>
+                        <td className="py-2 text-gray-600">
+                          {c.subscription_expires_at
+                            ? new Date(c.subscription_expires_at).toLocaleDateString("en-IN")
+                            : "—"}
+                        </td>
+                        <td className="py-2 text-right">
+                          <Button asChild variant="outline" size="sm">
+                            <Link to={`/admin-dashboard/clinic/${c.id}`}>Open clinic</Link>
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

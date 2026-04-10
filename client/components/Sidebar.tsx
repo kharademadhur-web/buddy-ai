@@ -10,9 +10,10 @@ import {
   Stethoscope,
   ChevronDown,
   Plus,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/context/AdminAuthContext";
@@ -48,8 +49,17 @@ export default function Sidebar({ role }: SidebarProps) {
       { icon: LayoutDashboard, label: "Dashboard", path: "/solo-dashboard" },
       { icon: Settings, label: "Settings", path: "/solo-dashboard#settings" },
     ],
-    admin: [
+  };
+
+  const adminMenuItems = useMemo(() => {
+    const clinicAdminExtras =
+      adminAuth.user?.role === "clinic-admin"
+        ? [{ icon: Calendar, label: "Daily summary", path: "/admin-dashboard/daily-summary" }]
+        : [];
+    return [
       { icon: LayoutDashboard, label: "Dashboard", path: "/admin-dashboard/overview" },
+      { icon: BarChart3, label: "Analytics", path: "/admin-dashboard/analytics" },
+      ...clinicAdminExtras,
       { icon: Users, label: "Clinics", path: "/admin-dashboard/clinics" },
       { icon: FileText, label: "KYC Review", path: "/admin-dashboard/kyc" },
       { icon: Settings, label: "Device Approvals", path: "/admin-dashboard/device-approvals" },
@@ -60,14 +70,14 @@ export default function Sidebar({ role }: SidebarProps) {
         isSection: true,
         submenu: [
           { icon: Plus, label: "Onboard Clinic", path: "/admin-dashboard/onboarding" },
-        ]
+        ],
       },
       { icon: Users, label: "Users", path: "/admin-dashboard/users" },
       { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
-    ],
-  };
+    ];
+  }, [adminAuth.user?.role]);
 
-  const items = menuItems[role];
+  const items = role === "admin" ? adminMenuItems : menuItems[role];
 
   const handleLogout = () => {
     adminAuth.logout();

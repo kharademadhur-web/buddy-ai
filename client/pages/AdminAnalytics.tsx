@@ -13,7 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAdminAuth } from "@/context/AdminAuthContext";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 
 interface AnalyticsData {
   totalRevenue: number;
@@ -23,13 +23,18 @@ interface AnalyticsData {
 }
 
 export default function AdminAnalytics() {
-  const { tokens } = useAdminAuth();
+  const { user } = useAdminAuth();
+  const scopedCopy =
+    user?.role === "clinic-admin"
+      ? "Figures below are scoped to your clinic (bill payments and pending amounts)."
+      : "Platform-wide totals from bill payment data.";
+
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
-    fetchAnalytics();
+    void fetchAnalytics();
   }, []);
 
   const fetchAnalytics = async () => {
@@ -37,8 +42,7 @@ export default function AdminAnalytics() {
       setLoading(true);
       setError("");
 
-      const accessToken =
-        tokens?.accessToken || sessionStorage.getItem("admin_access_token") || "";
+      const accessToken = sessionStorage.getItem("admin_access_token") || "";
       if (!accessToken) throw new Error("Not authenticated");
 
       const [revRes, trendsRes, clinicsRes] = await Promise.all([
@@ -54,13 +58,13 @@ export default function AdminAnalytics() {
       ]);
 
       if (!revRes.ok || !revJson.success) {
-        throw new Error(revJson.error || "Failed to fetch revenue analytics");
+        throw new Error(apiErrorMessage(revJson) || "Failed to fetch revenue analytics");
       }
       if (!trendsRes.ok || !trendsJson.success) {
-        throw new Error(trendsJson.error || "Failed to fetch trend analytics");
+        throw new Error(apiErrorMessage(trendsJson) || "Failed to fetch trend analytics");
       }
       if (!clinicsRes.ok || !clinicsJson.success) {
-        throw new Error(clinicsJson.error || "Failed to fetch clinic analytics");
+        throw new Error(apiErrorMessage(clinicsJson) || "Failed to fetch clinic analytics");
       }
 
       const totalRevenue = Number(revJson.revenue?.paidRevenue || 0);
@@ -83,9 +87,7 @@ export default function AdminAnalytics() {
         pendingByClinic,
       });
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch analytics"
-      );
+      setError(errorMessageFromUnknown(err, "Failed to fetch analytics"));
       setData(null);
     } finally {
       setLoading(false);
@@ -111,6 +113,11 @@ export default function AdminAnalytics() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Revenue analytics</h2>
+        <p className="mt-1 text-sm text-gray-600">{scopedCopy}</p>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Total Revenue Card */}
@@ -123,10 +130,7 @@ export default function AdminAnalytics() {
               <h3 className="text-3xl font-bold text-gray-900">
                 ₹{(data?.totalRevenue || 0).toLocaleString("en-IN")}
               </h3>
-              <p className="text-green-600 text-sm mt-2 flex items-center gap-1">
-                <TrendingUp className="w-4 h-4" />
-                +12% from last month
-              </p>
+              <p className="text-gray-500 text-sm mt-2">Paid bill totals (all time)</p>
             </div>
             <div className="bg-green-100 rounded-full p-4">
               <TrendingUp className="w-8 h-8 text-green-600" />
