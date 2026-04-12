@@ -57,8 +57,81 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize auth from session storage on mount
+  const clearAuth = useCallback(() => {
+    setUser(null);
+    setTokens(null);
+    sessionStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+    sessionStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    sessionStorage.removeItem(STORAGE_KEYS.USER);
+    sessionStorage.removeItem(STORAGE_KEYS.EXPIRY);
+  }, []);
+
+  /** Restore React state from sessionStorage when a valid non-expired session exists (e.g. user logged in while stale refresh was in flight). */
+  const hydrateFromSessionStorage = useCallback((): boolean => {
+    try {
+      const access = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const refresh = sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      const savedUser = sessionStorage.getItem(STORAGE_KEYS.USER);
+      const savedExpiry = sessionStorage.getItem(STORAGE_KEYS.EXPIRY);
+      if (!access || !savedUser || !savedExpiry) return false;
+      const expiryTime = parseInt(savedExpiry, 10);
+      if (Number.isNaN(expiryTime) || Date.now() > expiryTime) return false;
+      setTokens({
+        accessToken: access,
+        refreshToken: refresh || "",
+        expiresIn: Math.max(0, expiryTime - Date.now()),
+      });
+      setUser(JSON.parse(savedUser) as AdminUser);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const refreshTokenHandler = useCallback(async (refreshToken: string): Promise<boolean> => {
+    const accessSnapshot = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    try {
+      const response = await fetch(apiUrl("/api/auth/refresh"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error("Token refresh failed");
+      }
+
+      const newAccessToken = data.accessToken;
+
+      const expiryTime = Date.now() + 15 * 60 * 1000; // 15 minutes
+      sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
+      sessionStorage.setItem(STORAGE_KEYS.EXPIRY, expiryTime.toString());
+
+      const rt =
+        sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || refreshToken;
+      setTokens({
+        accessToken: newAccessToken,
+        refreshToken: rt,
+        expiresIn: 15 * 60,
+      });
+
+      return true;
+    } catch (err) {
+      console.error("Token refresh error:", err);
+      const current = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      if (current && current !== accessSnapshot) {
+        return false;
+      }
+      clearAuth();
+      return false;
+    }
+  }, [clearAuth]);
+
+  // Initialize auth from session storage on mount (avoid racing stale refresh vs new login — see hydrateFromSessionStorage)
   useEffect(() => {
+    let cancelled = false;
     const initializeAuth = async () => {
       const savedAccessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
       const savedRefreshToken = sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -67,36 +140,38 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
       if (savedAccessToken && savedUser && savedExpiry) {
         try {
-          // Check if token is still valid
           const expiryTime = parseInt(savedExpiry, 10);
           const isTokenExpired = Date.now() > expiryTime;
 
           if (isTokenExpired && savedRefreshToken) {
-            // Token expired, try to refresh
             const refreshSuccess = await refreshTokenHandler(savedRefreshToken);
+            if (cancelled) return;
             if (!refreshSuccess) {
-              clearAuth();
+              if (!hydrateFromSessionStorage()) clearAuth();
               return;
             }
-            setUser(JSON.parse(savedUser));
+            setUser(JSON.parse(savedUser) as AdminUser);
           } else if (!isTokenExpired) {
-            // Token still valid, restore from storage
             setTokens({
               accessToken: savedAccessToken,
               refreshToken: savedRefreshToken || "",
               expiresIn: expiryTime - Date.now(),
             });
-            setUser(JSON.parse(savedUser));
+            setUser(JSON.parse(savedUser) as AdminUser);
           }
         } catch (err) {
           console.error("Auth initialization error:", err);
-          clearAuth();
+          if (cancelled) return;
+          if (!hydrateFromSessionStorage()) clearAuth();
         }
       }
     };
 
-    initializeAuth();
-  }, []);
+    void initializeAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateFromSessionStorage, refreshTokenHandler, clearAuth]);
 
   // Keep React token state in sync when apiFetch refreshes the access token
   useEffect(() => {
@@ -113,15 +188,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("admin-access-token-refreshed", onRefreshed);
     return () => window.removeEventListener("admin-access-token-refreshed", onRefreshed);
-  }, []);
-
-  const clearAuth = useCallback(() => {
-    setUser(null);
-    setTokens(null);
-    sessionStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-    sessionStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-    sessionStorage.removeItem(STORAGE_KEYS.USER);
-    sessionStorage.removeItem(STORAGE_KEYS.EXPIRY);
   }, []);
 
   const login = async (user_id: string, password: string, deviceId?: string): Promise<AdminUser> => {
@@ -184,42 +250,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       throw err;
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const refreshTokenHandler = async (refreshToken: string): Promise<boolean> => {
-    try {
-      const response = await fetch(apiUrl("/api/auth/refresh"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error("Token refresh failed");
-      }
-
-      const newAccessToken = data.accessToken;
-
-      const expiryTime = Date.now() + 15 * 60 * 1000; // 15 minutes
-      sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
-      sessionStorage.setItem(STORAGE_KEYS.EXPIRY, expiryTime.toString());
-
-      const rt =
-        sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || refreshToken;
-      setTokens({
-        accessToken: newAccessToken,
-        refreshToken: rt,
-        expiresIn: 15 * 60,
-      });
-
-      return true;
-    } catch (err) {
-      console.error("Token refresh error:", err);
-      clearAuth();
-      return false;
     }
   };
 
