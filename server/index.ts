@@ -121,6 +121,17 @@ export async function createServer() {
       credentials: true,
     })
   );
+
+  // Razorpay SaaS subscription webhooks require raw body for signature verification
+  const { default: billingSaasWebhook } = await import("./routes/billing-saas-webhook");
+  app.post(
+    "/api/admin/billing-saas/webhook",
+    express.raw({ type: "application/json" }),
+    (req, res, next) => {
+      void billingSaasWebhook(req, res).catch(next);
+    }
+  );
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(requestLogger);
@@ -159,6 +170,11 @@ export async function createServer() {
 
   // Analytics & Reporting
   app.use("/api/admin/analytics", analyticsAdminRoutes);
+
+  app.use(
+    "/api/admin/billing-saas",
+    (await import("./routes/billing-saas")).default
+  );
 
   // =====================
   // Clinic App Routes (Doctor/Receptionist/Independent)

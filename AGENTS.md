@@ -174,6 +174,39 @@ Pushing this repo to GitHub triggers [.github/workflows/azure-webapp.yml](.githu
 
 **Manual deploy (no GitHub):** `pnpm build`, then deploy a Linux-built artifact (e.g. `deploy/` with `dist/`, `package.json`, and `npm install --omit=dev` run on Linux or on the App Service) — do not zip Windows `node_modules` for Linux App Service.
 
+## Clinic admin portal (how it fits together)
+
+- **Clinic owners** use role **`clinic-admin`**, same SPA as super‑admin: **`/portal/login`** → **`/admin-dashboard/*`**. APIs scope data to **`req.user.clinicId`**.
+- **Staff** (doctor / reception) → **`/portal/login`** → **`/doctor-dashboard`** or **`/reception-dashboard`**.
+- **Subscription** money is recorded via **Razorpay** (Billing page + webhook) or **super‑admin** manual **`POST /api/admin/clinics/:id/saas-payment`** (shared service). Env: **`RAZORPAY_KEY_ID`**, **`RAZORPAY_KEY_SECRET`**, webhook URL **`POST /api/admin/billing-saas/webhook`**.
+- **Reminders** (optional): `pnpm subscription:reminders` on a schedule; needs WhatsApp/Twilio/Meta env and `PUBLIC_URL`/`ADMIN_URL` for links.
+
+### Manual test checklist (QA)
+
+1. **Super‑admin**: Login → Overview (platform KPIs) → **Clinics** → open a clinic → **Clinic detail** (letterhead, staff, record SaaS payment if needed).
+2. **Clinic‑admin**: Login → Overview (clinic‑scoped cards) → **My clinic** → **Billing** (plan, history, Pay with Razorpay if keys set) → **Users** (staff) → **Device approvals** (own clinic only).
+3. **Sidebar**: Clinic‑admin must **not** see KYC, global onboarding, or platform‑only items.
+4. **Doctor / reception**: Login → **Portal** dashboards; queue/patients load when clinic subscription is **live** and not expired.
+
+### Demo credentials (local / staging only)
+
+The repo **does not** ship real passwords. Real accounts live in **Supabase `public.users`** (`user_id` + bcrypt `password_hash`).
+
+**Optional demo super‑admin** (run once in **Supabase → SQL Editor**):
+
+- Script: [`scripts/seed-demo-super-admin.sql`](scripts/seed-demo-super-admin.sql)
+
+| Field | Value |
+|--------|--------|
+| **User ID** | `DEMO-SA-1` |
+| **Password** | `SmartClinic-Test-2026!` |
+
+Use **`/portal/login`** or **`/admin/login`**, enter the **User ID** (not email) and password.
+
+Then use the **Admin UI** (Users / Onboarding) to create a **clinic** and a **`clinic-admin`** user with a password you choose — that is how you test the **clinic owner** portal end‑to‑end.
+
+**Do not** commit the seed script output to production without rotating the password or deleting the demo user.
+
 ## Architecture Notes
 
 - Single-port development with Vite + Express integration

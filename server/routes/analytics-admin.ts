@@ -338,9 +338,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const supabase = getSupabaseClient();
     const limit = Math.min(100, parseInt((req.query.limit as string) || "50", 10));
-    const { month } = req.query as { month?: string };
+    const { month, clinicId: queryClinicId } = req.query as { month?: string; clinicId?: string };
     const scopedClinic =
       req.user?.role === "clinic-admin" ? req.user.clinicId ?? undefined : undefined;
+    const superAdminClinicFilter =
+      req.user?.role === "super-admin" && queryClinicId && typeof queryClinicId === "string"
+        ? queryClinicId
+        : undefined;
 
     let q = supabase
       .from("clinic_saas_payments")
@@ -354,6 +358,7 @@ router.get(
       .limit(limit);
 
     if (scopedClinic) q = q.eq("clinic_id", scopedClinic);
+    else if (superAdminClinicFilter) q = q.eq("clinic_id", superAdminClinicFilter);
 
     if (month && /^\d{4}-\d{2}$/.test(month)) {
       const [y, m] = month.split("-").map((x) => parseInt(x, 10));

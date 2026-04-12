@@ -66,7 +66,7 @@ export default function ReceptionDashboard() {
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
-      <Sidebar role="reception" />
+      <Sidebar role="reception" queueCount={queue.length} />
 
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
@@ -140,7 +140,8 @@ export default function ReceptionDashboard() {
             <div className="text-center md:text-left flex-1">
               <h2 className="text-lg font-semibold text-gray-900">Payments & OTP</h2>
               <p className="text-sm text-gray-600 mt-1">
-                UPI / QR for collections. OTP contact:{" "}
+                Clinic letterhead is uploaded in Admin (onboarding or clinic detail) and appears on the patient
+                intake form below. UPI / QR for collections. OTP contact:{" "}
                 <a
                   className="text-blue-600 font-medium"
                   href={`tel:+91${import.meta.env.VITE_OTP_PHONE || "9137295344"}`}

@@ -1,6 +1,7 @@
 ﻿import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import AdminDashboardSuperAdmin from "./AdminDashboardSuperAdmin";
+import AdminClinicOverview from "./AdminClinicOverview";
 import AdminAnalytics from "./AdminAnalytics";
 import AdminClinicDailySummary from "./AdminClinicDailySummary";
 import AdminClinics from "./AdminClinics";
@@ -11,7 +12,27 @@ import ClinicDetail from "./ClinicDetail";
 import AdminOnboarding from "./AdminOnboarding";
 import AdminKycReview from "./AdminKycReview";
 import AdminDeviceApprovals from "./AdminDeviceApprovals";
+import AdminClinicBilling from "./AdminClinicBilling";
 import { useAdminAuth } from "@/context/AdminAuthContext";
+
+function AdminOverviewGate() {
+  const { user } = useAdminAuth();
+  if (user?.role === "clinic-admin") return <AdminClinicOverview />;
+  return <AdminDashboardSuperAdmin />;
+}
+
+function SuperAdminOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAdminAuth();
+  if (user?.role !== "super-admin") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-900 text-sm">
+        <p className="font-semibold">Access restricted</p>
+        <p className="mt-1">This page is only available to platform administrators.</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function AdminDashboardLayout() {
   const { user } = useAdminAuth();
@@ -41,8 +62,8 @@ export default function AdminDashboard() {
         {/* Default route - redirect to overview */}
         <Route index element={<Navigate to="/admin-dashboard/overview" replace />} />
 
-        {/* Overview */}
-        <Route path="overview" element={<AdminDashboardSuperAdmin />} />
+        {/* Overview — clinic-admin vs super-admin */}
+        <Route path="overview" element={<AdminOverviewGate />} />
 
         <Route path="analytics" element={<AdminAnalytics />} />
 
@@ -52,14 +73,31 @@ export default function AdminDashboard() {
         <Route path="clinics" element={<AdminClinics />} />
         <Route path="clinic/:clinicId" element={<ClinicDetail />} />
 
+        {/* Billing (clinic-admin + super-admin) */}
+        <Route path="billing" element={<AdminClinicBilling />} />
+
         {/* Users */}
         <Route path="users" element={<AdminUsers />} />
 
         {/* Onboarding */}
-        <Route path="onboarding" element={<AdminOnboarding />} />
+        <Route
+          path="onboarding"
+          element={
+            <SuperAdminOnly>
+              <AdminOnboarding />
+            </SuperAdminOnly>
+          }
+        />
 
         {/* KYC Review */}
-        <Route path="kyc" element={<AdminKycReview />} />
+        <Route
+          path="kyc"
+          element={
+            <SuperAdminOnly>
+              <AdminKycReview />
+            </SuperAdminOnly>
+          }
+        />
 
         {/* Settings */}
         <Route path="settings" element={<AdminSettings />} />

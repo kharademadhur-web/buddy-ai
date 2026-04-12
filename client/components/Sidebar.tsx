@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Plus,
   Calendar,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -21,9 +22,22 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 
 interface SidebarProps {
   role: "doctor" | "reception" | "solo-doctor" | "admin";
+  /** Checked-in / waiting count for Queue nav badge (doctor & reception) */
+  queueCount?: number;
 }
 
-export default function Sidebar({ role }: SidebarProps) {
+/** Hash routes like /doctor-dashboard#queue — match pathname + hash for active styling */
+function portalNavActive(itemPath: string, pathname: string, hash: string): boolean {
+  if (!itemPath.includes("#")) {
+    return pathname === itemPath && !(hash || "").replace(/^#/, "");
+  }
+  const [base, frag] = itemPath.split("#");
+  if (pathname !== base) return false;
+  const h = (hash || "").replace(/^#/, "").toLowerCase();
+  return h === (frag || "").toLowerCase();
+}
+
+export default function Sidebar({ role, queueCount }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const adminAuth = useAdminAuth();
@@ -71,15 +85,23 @@ export default function Sidebar({ role }: SidebarProps) {
   };
 
   const adminMenuItems = useMemo(() => {
-    const clinicAdminExtras =
-      adminAuth.user?.role === "clinic-admin"
-        ? [{ icon: Calendar, label: "Daily summary", path: "/admin-dashboard/daily-summary" }]
-        : [];
+    if (adminAuth.user?.role === "clinic-admin") {
+      return [
+        { icon: LayoutDashboard, label: "Dashboard", path: "/admin-dashboard/overview" },
+        { icon: BarChart3, label: "Analytics", path: "/admin-dashboard/analytics" },
+        { icon: Calendar, label: "Daily summary", path: "/admin-dashboard/daily-summary" },
+        { icon: Users, label: "My clinic", path: "/admin-dashboard/clinics" },
+        { icon: CreditCard, label: "Billing", path: "/admin-dashboard/billing" },
+        { icon: Users, label: "Users", path: "/admin-dashboard/users" },
+        { icon: Settings, label: "Device Approvals", path: "/admin-dashboard/device-approvals" },
+        { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
+      ];
+    }
     return [
       { icon: LayoutDashboard, label: "Dashboard", path: "/admin-dashboard/overview" },
       { icon: BarChart3, label: "Analytics", path: "/admin-dashboard/analytics" },
-      ...clinicAdminExtras,
       { icon: Users, label: "Clinics", path: "/admin-dashboard/clinics" },
+      { icon: CreditCard, label: "Billing", path: "/admin-dashboard/billing" },
       { icon: FileText, label: "KYC Review", path: "/admin-dashboard/kyc" },
       { icon: Settings, label: "Device Approvals", path: "/admin-dashboard/device-approvals" },
       {
@@ -97,10 +119,28 @@ export default function Sidebar({ role }: SidebarProps) {
   }, [adminAuth.user?.role]);
 
   const items = role === "admin" ? adminMenuItems : menuItems[role];
+  const useMinimalPortalHeader = role === "doctor" || role === "reception";
 
   const handleLogout = () => {
     adminAuth.logout();
     navigate(role === "admin" ? "/admin/login" : "/portal/login");
+  };
+
+  const navItemActive = (itemPath: string) => {
+    if (role === "admin") return location.pathname === itemPath;
+    if (role === "doctor" || role === "reception" || role === "solo-doctor") {
+      return portalNavActive(itemPath, location.pathname, location.hash);
+    }
+    return location.pathname === itemPath;
+  };
+
+  const navigatePortalPath = (path: string) => {
+    if (path.includes("#")) {
+      const [base, frag] = path.split("#");
+      navigate(frag ? `${base}#${frag}` : base);
+    } else {
+      navigate(path);
+    }
   };
 
   const toggleSection = (sectionId: string) => {
@@ -128,18 +168,18 @@ export default function Sidebar({ role }: SidebarProps) {
                 <div>
                   <h1 className="font-bold text-gray-900">SmartClinic</h1>
                   <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
-                  {portalClinic.name ? (
+                  {!useMinimalPortalHeader && portalClinic.name ? (
                     <p className="text-xs text-gray-700 mt-1 font-medium truncate max-w-[200px]" title={portalClinic.name}>
                       {portalClinic.name}
                     </p>
                   ) : null}
-                  {(adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
+                  {!useMinimalPortalHeader && (adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
                     <p className="text-[10px] text-gray-500 mt-0.5">
                       Clinic ID:{" "}
                       <span className="font-mono">{adminAuth.user?.clinic_code || portalClinic.clinic_code}</span>
                     </p>
                   ) : null}
-                  {adminAuth.user?.user_id ? (
+                  {!useMinimalPortalHeader && adminAuth.user?.user_id ? (
                     <p className="text-[10px] text-gray-500">
                       Your ID: <span className="font-mono">{adminAuth.user.user_id}</span>
                     </p>
@@ -150,7 +190,7 @@ export default function Sidebar({ role }: SidebarProps) {
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
               {items.map((item: any) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = navItemActive(item.path);
                 const isExpanded = expandedSections[item.label?.toLowerCase().replace(/\s+/g, "")];
                 if (item.isSection) {
                   const sectionId = item.label?.toLowerCase().replace(/\s+/g, "");
@@ -201,7 +241,7 @@ export default function Sidebar({ role }: SidebarProps) {
                     type="button"
                     key={item.path}
                     onClick={() => {
-                      navigate(item.path);
+                      navigatePortalPath(item.path);
                       setSheetOpen(false);
                     }}
                     className={cn(
@@ -210,7 +250,14 @@ export default function Sidebar({ role }: SidebarProps) {
                     )}
                   >
                     <Icon className="w-5 h-5 flex-shrink-0" />
-                    <span>{item.label}</span>
+                    <span className="flex items-center gap-2 flex-1">
+                      {item.label}
+                      {item.label === "Queue" && typeof queueCount === "number" && queueCount > 0 ? (
+                        <span className="ml-auto text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                          {queueCount > 99 ? "99+" : queueCount}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
                 );
               })}
@@ -243,18 +290,18 @@ export default function Sidebar({ role }: SidebarProps) {
           <div>
             <h1 className="font-bold text-gray-900">SmartClinic</h1>
             <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
-            {role !== "admin" && portalClinic.name ? (
+            {role !== "admin" && !useMinimalPortalHeader && portalClinic.name ? (
               <p className="text-xs text-gray-700 mt-1 font-medium truncate" title={portalClinic.name}>
                 {portalClinic.name}
               </p>
             ) : null}
-            {role !== "admin" && (adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
+            {role !== "admin" && !useMinimalPortalHeader && (adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
               <p className="text-[10px] text-gray-500 mt-0.5">
                 Clinic ID:{" "}
                 <span className="font-mono">{adminAuth.user?.clinic_code || portalClinic.clinic_code}</span>
               </p>
             ) : null}
-            {role !== "admin" && adminAuth.user?.user_id ? (
+            {role !== "admin" && !useMinimalPortalHeader && adminAuth.user?.user_id ? (
               <p className="text-[10px] text-gray-500">
                 Your ID: <span className="font-mono">{adminAuth.user.user_id}</span>
               </p>
@@ -267,7 +314,7 @@ export default function Sidebar({ role }: SidebarProps) {
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {items.map((item: any) => {
           const Icon = item.icon;
-          const isActive = location.pathname === item.path;
+          const isActive = navItemActive(item.path);
           const isExpanded = expandedSections[item.label?.toLowerCase().replace(/\s+/g, "")];
 
           if (item.isSection) {
@@ -324,7 +371,8 @@ export default function Sidebar({ role }: SidebarProps) {
           return (
             <button
               key={item.path}
-              onClick={() => navigate(item.path)}
+              type="button"
+              onClick={() => navigatePortalPath(item.path)}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left",
                 isActive
@@ -333,7 +381,14 @@ export default function Sidebar({ role }: SidebarProps) {
               )}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              <span>{item.label}</span>
+              <span className="flex items-center gap-2 flex-1">
+                {item.label}
+                {item.label === "Queue" && typeof queueCount === "number" && queueCount > 0 ? (
+                  <span className="ml-auto text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                    {queueCount > 99 ? "99+" : queueCount}
+                  </span>
+                ) : null}
+              </span>
             </button>
           );
         })}

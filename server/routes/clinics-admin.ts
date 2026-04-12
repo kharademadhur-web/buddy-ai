@@ -248,67 +248,21 @@ router.post(
       throw new ValidationError("Clinic not found");
     }
 
-    const amt =
-      amount != null && !Number.isNaN(Number(amount))
-        ? Number(amount)
-        : Number((clinic as { saas_plan_amount_monthly?: number }).saas_plan_amount_monthly ?? 5999);
-    const nMonths = Math.max(1, Math.min(36, parseInt(String(months ?? 1), 10) || 1));
-
-    const now = new Date();
-    let periodStart = new Date(now);
-    const currentEnd = (clinic as { subscription_expires_at?: string | null })
-      .subscription_expires_at
-      ? new Date((clinic as { subscription_expires_at: string }).subscription_expires_at)
-      : null;
-    if (currentEnd && currentEnd.getTime() > now.getTime()) {
-      periodStart = currentEnd;
-    }
-
-    const periodEnd = new Date(periodStart);
-    periodEnd.setMonth(periodEnd.getMonth() + nMonths);
-
-    const { error: payErr } = await supabase.from("clinic_saas_payments").insert({
-      clinic_id: clinicId,
-      amount: amt,
-      paid_at: now.toISOString(),
-      period_start: periodStart.toISOString(),
-      period_end: periodEnd.toISOString(),
-      status: "completed",
+    const { recordSaasPaymentAndExtendSubscription } = await import(
+      "../services/clinic-saas-subscription.service"
+    );
+    const result = await recordSaasPaymentAndExtendSubscription(supabase, {
+      clinicId,
+      amount,
+      months: months ?? 1,
       notes: notes ?? null,
-      created_by: adminUserId ?? null,
+      createdByUserId: adminUserId ?? null,
     });
-
-    if (payErr) {
-      throw new Error(`Failed to record payment: ${payErr.message}`);
-    }
-
-    const patch: Record<string, unknown> = {
-      subscription_status: "live",
-      subscription_expires_at: periodEnd.toISOString(),
-      updated_at: now.toISOString(),
-    };
-    if (!(clinic as { subscription_started_at?: string | null }).subscription_started_at) {
-      patch.subscription_started_at = periodStart.toISOString();
-    }
-
-    const { data: updated, error: upErr } = await supabase
-      .from("clinics")
-      .update(patch)
-      .eq("id", clinicId)
-      .select()
-      .single();
-
-    if (upErr || !updated) {
-      throw new Error(`Failed to update clinic: ${upErr?.message}`);
-    }
 
     res.status(201).json({
       success: true,
-      clinic: updated,
-      period: {
-        start: periodStart.toISOString(),
-        end: periodEnd.toISOString(),
-      },
+      clinic: result.clinic,
+      period: result.period,
     });
   })
 );

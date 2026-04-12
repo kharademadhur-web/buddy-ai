@@ -215,6 +215,98 @@ router.post(
 );
 
 /**
+ * GET /api/consultations/doctor/recent?clinicId=
+ * Recent completed consultations for the logged-in doctor with patient + prescription lines.
+ */
+router.get(
+  "/doctor/recent",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    const limit = Math.min(100, Math.max(1, parseInt(String((req.query as { limit?: string }).limit || "40"), 10) || 40));
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const doctorId = req.user!.userId;
+    const { data, error } = await supabase
+      .from("consultations")
+      .select(
+        `
+        id,
+        created_at,
+        diagnosis,
+        notes,
+        patient_id,
+        patients ( id, name, phone ),
+        prescriptions (
+          id,
+          notes,
+          created_at,
+          prescription_items ( id, name, dosage, frequency, duration, instructions )
+        )
+      `
+      )
+      .eq("clinic_id", clinicId)
+      .eq("doctor_user_id", doctorId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+
+    type RxRow = {
+      id: string;
+      notes: string | null;
+      created_at: string;
+      prescription_items: Array<{
+        id: string;
+        name: string;
+        dosage: string | null;
+        frequency: string | null;
+        duration: string | null;
+        instructions: string | null;
+      }> | null;
+    };
+
+    const rows = (data ?? []).map((row: Record<string, unknown>) => {
+      const pr = row.patients as { id?: string; name?: string; phone?: string | null } | null | undefined;
+      const patients = Array.isArray(pr) ? pr[0] : pr;
+      const rxRaw = row.prescriptions as RxRow | RxRow[] | null | undefined;
+      const rxArr = Array.isArray(rxRaw) ? rxRaw : rxRaw ? [rxRaw] : [];
+      const prescription = rxArr[0];
+      const itemsRaw = prescription?.prescription_items;
+      const items = Array.isArray(itemsRaw) ? itemsRaw : itemsRaw ? [itemsRaw] : [];
+      return {
+        consultationId: row.id,
+        createdAt: row.created_at,
+        diagnosis: row.diagnosis,
+        notes: row.notes,
+        patient: patients
+          ? { id: patients.id, name: patients.name, phone: patients.phone ?? null }
+          : { id: row.patient_id, name: "Patient", phone: null as string | null },
+        prescription: prescription
+          ? {
+              id: prescription.id,
+              notes: prescription.notes,
+              createdAt: prescription.created_at,
+              items,
+            }
+          : null,
+      };
+    });
+
+    return res.json({ success: true, consultations: rows });
+  }
+);
+
+/**
  * GET /api/consultations/patients/:patientId/history
  */
 router.get(

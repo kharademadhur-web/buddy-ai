@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,29 @@ import PrescriptionCanvas from "@/components/PrescriptionCanvas";
 import MedicineTable from "@/components/MedicineTable";
 import ReportsTab from "@/components/ReportsTab";
 import { Medicine } from "@/context/ClinicContext";
-import { FileText, Download, Printer, CheckCircle2, Loader2, KeyRound } from "lucide-react";
+import { FileText, Download, Printer, CheckCircle2, Loader2, KeyRound, Phone, Building2, Hash, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+type DoctorRecentConsultation = {
+  consultationId: string;
+  createdAt: string;
+  diagnosis: string | null;
+  notes: string | null;
+  patient: { id?: string; name?: string; phone: string | null };
+  prescription: {
+    id: string;
+    notes: string | null;
+    createdAt: string;
+    items: Array<{
+      name: string;
+      dosage: string | null;
+      frequency: string | null;
+      duration: string | null;
+    }>;
+  } | null;
+};
 
 export default function DoctorDashboard() {
   const location = useLocation();
@@ -33,27 +53,53 @@ export default function DoctorDashboard() {
   const [activeTab, setActiveTab] = useState<"prescription" | "reports">("prescription");
   const [completing, setCompleting] = useState(false);
 
-  // Clinic letterhead for patient panel
+  // Clinic letterhead for patient panel + metadata for Settings
   const [clinicLetterhead, setClinicLetterhead] = useState<import("@/context/ClinicContext").Letterhead | null>(null);
+  const [clinicMeta, setClinicMeta] = useState<{ name: string; phone?: string | null; address?: string | null } | null>(null);
   useEffect(() => {
     if (!clinicId) return;
     apiFetch(`/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(clinicId)}`)
       .then((r) => r.json())
       .then((j) => {
-        if (j.success && j.letterhead?.signedUrl) {
-          setClinicLetterhead({
-            id: clinicId,
-            name: j.clinic?.name ?? "Clinic",
-            templateUrl: j.letterhead.signedUrl,
-            clinicName: j.clinic?.name ?? "Clinic",
-            clinicAddress: j.clinic?.address ?? "",
-            clinicPhone: j.clinic?.phone ?? "",
-            createdAt: new Date(),
+        if (j.success && j.clinic) {
+          setClinicMeta({
+            name: j.clinic.name ?? "Clinic",
+            phone: j.clinic.phone ?? null,
+            address: j.clinic.address ?? null,
           });
+          if (j.letterhead?.signedUrl) {
+            setClinicLetterhead({
+              id: clinicId,
+              name: j.clinic?.name ?? "Clinic",
+              templateUrl: j.letterhead.signedUrl,
+              clinicName: j.clinic?.name ?? "Clinic",
+              clinicAddress: j.clinic?.address ?? "",
+              clinicPhone: j.clinic?.phone ?? "",
+              createdAt: new Date(),
+            });
+          }
         }
       })
       .catch(() => {});
   }, [clinicId]);
+
+  const [recentConsultations, setRecentConsultations] = useState<DoctorRecentConsultation[]>([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const reloadRecentConsultations = useCallback(() => {
+    if (!clinicId || !user?.id) return;
+    setRecentLoading(true);
+    apiFetch(`/api/consultations/doctor/recent?clinicId=${encodeURIComponent(clinicId)}&limit=50`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && Array.isArray(j.consultations)) setRecentConsultations(j.consultations);
+      })
+      .catch(() => setRecentConsultations([]))
+      .finally(() => setRecentLoading(false));
+  }, [clinicId, user?.id]);
+
+  useEffect(() => {
+    reloadRecentConsultations();
+  }, [reloadRecentConsultations]);
 
   const [pwOpen, setPwOpen] = useState(false);
   const [qrUploading, setQrUploading] = useState(false);
@@ -80,7 +126,7 @@ export default function DoctorDashboard() {
     if (h === "queue") scroll("staff-queue");
     if (h === "rx" || h === "prescription") {
       setActiveTab("prescription");
-      scroll("staff-prescription");
+      scroll("staff-prescription-history");
     }
     if (h === "analytics" || h === "reports") {
       setActiveTab("reports");
@@ -184,6 +230,7 @@ export default function DoctorDashboard() {
       setHandwritingStrokes(null);
       setMedicines([]);
       await refetch();
+      reloadRecentConsultations();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to complete");
     } finally {
@@ -193,51 +240,17 @@ export default function DoctorDashboard() {
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
-      <Sidebar role="doctor" />
+      <Sidebar role="doctor" queueCount={rows.length} />
 
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-8">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
-              {user?.name ? (
-                <p className="mt-1 text-sm text-gray-600">
-                  Signed in as <span className="font-medium text-gray-800">{user.name}</span>
-                  {user.user_id ? (
-                    <span className="ml-2 font-mono text-xs text-gray-500">{user.user_id}</span>
-                  ) : null}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
-              {(user?.role === "doctor" || user?.role === "independent") && (
-                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-200 bg-white text-sm cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="sr-only"
-                    disabled={qrUploading}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = "";
-                      if (f) void uploadPersonalQr(f);
-                    }}
-                  />
-                  {qrUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Your UPI QR
-                </label>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2"
-                id="staff-settings"
-                onClick={() => setPwOpen(true)}
-              >
-                <KeyRound className="h-4 w-4" />
-                Change password
-              </Button>
-            </div>
+          <div className="flex flex-col gap-2 mb-6 sm:mb-8">
+            {user?.name ? (
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-gray-900">{user.name}</h1>
+            ) : (
+              <h1 className="text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
+            )}
+            <p className="text-sm sm:text-base text-gray-500">Doctor Dashboard</p>
           </div>
 
           <PortalChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
@@ -384,6 +397,145 @@ export default function DoctorDashboard() {
               )}
             </div>
           </div>
+
+          {clinicId && (
+            <Card id="staff-prescription-history" className="mb-6 scroll-mt-24 border-gray-200 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  Recent prescriptions
+                </CardTitle>
+                <CardDescription>
+                  Medicines and notes from completed visits (by patient). Use the sidebar &quot;Prescriptions&quot; to jump
+                  here.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {recentLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500 py-6">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading history…
+                  </div>
+                ) : recentConsultations.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4">
+                    No completed consultations yet. When you finish a visit with medicines or notes, they will appear
+                    here.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          <th className="px-3 py-2 whitespace-nowrap">Date</th>
+                          <th className="px-3 py-2 whitespace-nowrap">Patient</th>
+                          <th className="px-3 py-2 whitespace-nowrap">Phone</th>
+                          <th className="px-3 py-2 min-w-[200px]">Medicines</th>
+                          <th className="px-3 py-2 min-w-[120px]">Notes / diagnosis</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {recentConsultations.map((c) => {
+                          const dt = c.createdAt ? new Date(c.createdAt) : null;
+                          const medSummary =
+                            c.prescription?.items?.length ?
+                              c.prescription.items
+                                .map((it) => [it.name, it.dosage, it.frequency].filter(Boolean).join(" · "))
+                                .join("; ")
+                            : "—";
+                          const extra = c.diagnosis || c.notes || c.prescription?.notes || "—";
+                          return (
+                            <tr key={c.consultationId} className="bg-white hover:bg-gray-50/80">
+                              <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                                {dt && !Number.isNaN(dt.getTime()) ? dt.toLocaleString() : "—"}
+                              </td>
+                              <td className="px-3 py-2 font-medium text-gray-900">{c.patient?.name ?? "—"}</td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                {c.patient?.phone ?? "—"}
+                              </td>
+                              <td className="px-3 py-2 text-gray-800">{medSummary}</td>
+                              <td className="px-3 py-2 text-gray-600 max-w-md truncate" title={extra}>
+                                {extra}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card id="staff-settings" className="mb-6 scroll-mt-24 border-gray-200 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Account &amp; clinic</CardTitle>
+              <CardDescription>Your profile, clinic identifiers, and security</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+                  <UserCircle className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Your name</p>
+                    <p className="text-sm font-semibold text-gray-900">{user?.name ?? "—"}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+                  <Phone className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Phone (onboarding)</p>
+                    <p className="text-sm font-semibold text-gray-900">{user?.phone?.trim() || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+                  <Hash className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Your user ID</p>
+                    <p className="font-mono text-sm font-semibold text-gray-900">{user?.user_id ?? "—"}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+                  <Building2 className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Clinic</p>
+                    <p className="text-sm font-semibold text-gray-900">{clinicMeta?.name ?? clinicLetterhead?.clinicName ?? "—"}</p>
+                    {user?.clinic_code ? (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Clinic ID: <span className="font-mono">{user.clinic_code}</span>
+                      </p>
+                    ) : null}
+                    {clinicMeta?.phone ? (
+                      <p className="text-xs text-gray-500 mt-0.5">Clinic phone: {clinicMeta.phone}</p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                {(user?.role === "doctor" || user?.role === "independent") && (
+                  <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-200 bg-white text-sm cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      disabled={qrUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) void uploadPersonalQr(f);
+                      }}
+                    />
+                    {qrUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Upload your UPI QR
+                  </label>
+                )}
+                <Button type="button" variant="outline" className="gap-2" onClick={() => setPwOpen(true)}>
+                  <KeyRound className="h-4 w-4" />
+                  Change password
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

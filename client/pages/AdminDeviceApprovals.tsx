@@ -3,7 +3,7 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 
 type DeviceRequest = {
   id: string;
@@ -36,10 +36,12 @@ export default function AdminDeviceApprovals() {
     try {
       const res = await apiFetch("/api/admin/device-approval/pending", { headers });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to load pending requests");
+      if (!res.ok || !json.success) {
+        throw new Error(apiErrorMessage(json) || "Failed to load pending requests");
+      }
       setRequests(json.requests || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load pending requests");
+      setError(errorMessageFromUnknown(e, "Failed to load pending requests"));
     } finally {
       setLoading(false);
     }
@@ -60,10 +62,12 @@ export default function AdminDeviceApprovals() {
         body: JSON.stringify({}),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to approve");
+      if (!res.ok || !json.success) {
+        throw new Error(apiErrorMessage(json) || "Failed to approve");
+      }
       await fetchPending();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to approve");
+      setError(errorMessageFromUnknown(e, "Failed to approve"));
     } finally {
       setLoading(false);
     }
@@ -79,10 +83,12 @@ export default function AdminDeviceApprovals() {
         body: JSON.stringify({}),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to reject");
+      if (!res.ok || !json.success) {
+        throw new Error(apiErrorMessage(json) || "Failed to reject");
+      }
       await fetchPending();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reject");
+      setError(errorMessageFromUnknown(e, "Failed to reject"));
     } finally {
       setLoading(false);
     }
