@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "../config/supabase";
 import { hashPassword, verifyPassword } from "../config/encryption";
 import { generateTokens, JWTPayload } from "../config/jwt";
+import SupabaseAuthService from "./supabase-auth.service";
 
 type ContactType = "phone" | "email";
 
@@ -116,6 +117,39 @@ export class OtpAuthService {
   }
 
   /** Reception intake: prove phone without issuing login tokens or creating users. */
+  /**
+   * Password change: verify current password + phone matches account, then send OTP.
+   */
+  static async sendPasswordChangeOtpWithPasswordAndPhone(
+    userId: string,
+    currentPassword: string,
+    phoneInput: string
+  ) {
+    const ok = await SupabaseAuthService.verifyCurrentPassword(userId, currentPassword);
+    if (!ok) {
+      throw new Error("Current password is incorrect");
+    }
+    const supabase = getSupabaseClient();
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("phone, role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !user?.phone) {
+      throw new Error("Phone number not on file. Contact your administrator.");
+    }
+    const role = String(user.role || "");
+    if (!["doctor", "independent", "receptionist", "clinic-admin"].includes(role)) {
+      throw new Error("Password change via OTP is not available for this account.");
+    }
+    const a = normalizePhoneDigits(phoneInput);
+    const b = normalizePhoneDigits(user.phone);
+    if (!a || a !== b) {
+      throw new Error("Phone number does not match the number registered to this account");
+    }
+    return this.sendOtp(user.phone, "phone");
+  }
+
   /**
    * Send OTP to the authenticated user's phone (password change flow).
    */

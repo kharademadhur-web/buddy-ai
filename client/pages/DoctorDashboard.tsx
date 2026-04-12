@@ -2,16 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import PortalChangePasswordDialog from "@/components/PortalChangePasswordDialog";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
 import { apiFetch, apiErrorMessage } from "@/lib/api-base";
@@ -65,12 +56,17 @@ export default function DoctorDashboard() {
   }, [clinicId]);
 
   const [pwOpen, setPwOpen] = useState(false);
-  const [pwSessionId, setPwSessionId] = useState<string | null>(null);
-  const [pwOtp, setPwOtp] = useState("");
-  const [pwNew, setPwNew] = useState("");
-  const [pwNew2, setPwNew2] = useState("");
-  const [pwLoading, setPwLoading] = useState(false);
-  const [pwError, setPwError] = useState("");
+  const [qrUploading, setQrUploading] = useState(false);
+
+  useEffect(() => {
+    if (!user || (user.role !== "doctor" && user.role !== "independent")) return;
+    const tick = () => {
+      void apiFetch("/api/staff/presence-heartbeat", { method: "POST" });
+    };
+    tick();
+    const t = setInterval(tick, 45_000);
+    return () => clearInterval(t);
+  }, [user?.role, user?.id]);
 
   // Sidebar links: /doctor-dashboard#queue | #rx | #analytics | #settings
   useEffect(() => {
@@ -93,58 +89,19 @@ export default function DoctorDashboard() {
     if (h === "settings") scroll("staff-settings");
   }, [location.hash]);
 
-  const requestPasswordOtp = async () => {
-    setPwError("");
-    setPwLoading(true);
+  const uploadPersonalQr = async (file: File) => {
+    setQrUploading(true);
     try {
-      const res = await apiFetch("/api/auth/password-change/request-otp", { method: "POST" });
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await apiFetch("/api/staff/me/payment-qr", { method: "POST", body: fd });
       const j = await res.json();
-      if (!res.ok || !j.success) throw new Error(apiErrorMessage(j) || "Failed to send OTP");
-      setPwSessionId(j.sessionId);
-      toast.success("OTP sent to your registered phone");
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Upload failed");
+      toast.success("Personal payment QR saved.");
     } catch (e) {
-      setPwError(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
-      setPwLoading(false);
-    }
-  };
-
-  const completePasswordChange = async () => {
-    if (!pwSessionId) {
-      setPwError("Request OTP first");
-      return;
-    }
-    if (pwNew.length < 8) {
-      setPwError("Password must be at least 8 characters");
-      return;
-    }
-    if (pwNew !== pwNew2) {
-      setPwError("Passwords do not match");
-      return;
-    }
-    setPwError("");
-    setPwLoading(true);
-    try {
-      const res = await apiFetch("/api/auth/password-change/complete", {
-        method: "POST",
-        body: JSON.stringify({
-          sessionId: pwSessionId,
-          otp: pwOtp.trim(),
-          newPassword: pwNew,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok || !j.success) throw new Error(apiErrorMessage(j) || "Failed to update");
-      toast.success("Password updated");
-      setPwOpen(false);
-      setPwSessionId(null);
-      setPwOtp("");
-      setPwNew("");
-      setPwNew2("");
-    } catch (e) {
-      setPwError(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setPwLoading(false);
+      setQrUploading(false);
     }
   };
 
@@ -241,80 +198,49 @@ export default function DoctorDashboard() {
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-8">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
-            <Button
-              type="button"
-              variant="outline"
-              className="shrink-0 gap-2"
-              id="staff-settings"
-              onClick={() => setPwOpen(true)}
-            >
-              <KeyRound className="h-4 w-4" />
-              Change password
-            </Button>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
+              {user?.name ? (
+                <p className="mt-1 text-sm text-gray-600">
+                  Signed in as <span className="font-medium text-gray-800">{user.name}</span>
+                  {user.user_id ? (
+                    <span className="ml-2 font-mono text-xs text-gray-500">{user.user_id}</span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              {(user?.role === "doctor" || user?.role === "independent") && (
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-200 bg-white text-sm cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="sr-only"
+                    disabled={qrUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) void uploadPersonalQr(f);
+                    }}
+                  />
+                  {qrUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Your UPI QR
+                </label>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                id="staff-settings"
+                onClick={() => setPwOpen(true)}
+              >
+                <KeyRound className="h-4 w-4" />
+                Change password
+              </Button>
+            </div>
           </div>
 
-          <Dialog open={pwOpen} onOpenChange={setPwOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Change password</DialogTitle>
-                <DialogDescription>
-                  We will send a one-time code to your registered phone. Then enter the code and your new
-                  password.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                {pwError ? <p className="text-sm text-red-600">{pwError}</p> : null}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => void requestPasswordOtp()}
-                  disabled={pwLoading}
-                >
-                  {pwLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Send OTP to phone
-                </Button>
-                <div className="space-y-1">
-                  <Label htmlFor="pw-otp">OTP</Label>
-                  <Input
-                    id="pw-otp"
-                    value={pwOtp}
-                    onChange={(e) => setPwOtp(e.target.value)}
-                    autoComplete="one-time-code"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pw-new">New password</Label>
-                  <Input
-                    id="pw-new"
-                    type="password"
-                    value={pwNew}
-                    onChange={(e) => setPwNew(e.target.value)}
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pw-new2">Confirm new password</Label>
-                  <Input
-                    id="pw-new2"
-                    type="password"
-                    value={pwNew2}
-                    onChange={(e) => setPwNew2(e.target.value)}
-                    autoComplete="new-password"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setPwOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="button" onClick={() => void completePasswordChange()} disabled={pwLoading}>
-                  Update password
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <PortalChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
 
           {!clinicId && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">

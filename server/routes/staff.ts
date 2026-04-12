@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
-import { signSupabaseRlsJwt } from "../config/supabase-jwt";
+import multer from "multer";
+import { getSupabaseClient } from "../config/supabase";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { fetchAssignedDoctorIds } from "../services/receptionist-scope.service";
@@ -11,6 +11,21 @@ import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 const CLINIC_ASSETS_BUCKET = "clinic-assets";
+
+/** Doctors are "online" if they sent a heartbeat within this window. */
+const PRESENCE_ONLINE_MS = 120_000;
+
+const uploadPaymentQr = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024 },
+});
+
+async function ensureClinicAssetsBucket() {
+  const supabase = getSupabaseClient();
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if ((buckets || []).some((b) => b.name === CLINIC_ASSETS_BUCKET)) return;
+  await supabase.storage.createBucket(CLINIC_ASSETS_BUCKET, { public: false });
+}
 
 /**
  * GET /api/staff/doctors
@@ -27,31 +42,126 @@ router.get(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    // Service-role client: RLS only allows each user to SELECT their own `users` row, so
+    // receptionists/doctors cannot list colleague doctors via the RLS JWT client. Clinic
+    // scope is enforced above; optional assignment filter below narrows receptionists.
+    const supabase = getSupabaseClient();
 
-    let q = supabase
-      .from("users")
-      .select("id, user_id, name, role, clinic_id")
-      .eq("clinic_id", clinicId)
-      .in("role", ["doctor", "independent"])
-      .order("name", { ascending: true });
+    const buildQuery = (select: string) => {
+      let q = supabase
+        .from("users")
+        .select(select)
+        .eq("clinic_id", clinicId)
+        .in("role", ["doctor", "independent"])
+        .order("name", { ascending: true });
+      return q;
+    };
+
+    let q = buildQuery("id, user_id, name, role, clinic_id, last_portal_heartbeat_at");
 
     if (req.user?.role === "receptionist") {
       const assigned = await fetchAssignedDoctorIds(req.user);
-      if (assigned.length === 0) {
-        return res.json({ success: true, doctors: [] });
+      // If admin has not created assignments yet, show all doctors in the clinic (same-clinic scope).
+      if (assigned.length > 0) {
+        q = q.in("id", assigned);
       }
-      q = q.in("id", assigned);
     }
 
-    const { data, error } = await q;
+    let { data, error } = await q;
+
+    // Migration 019 not applied yet — column missing
+    if (error && /last_portal|column|does not exist|schema cache/i.test(error.message)) {
+      q = buildQuery("id, user_id, name, role, clinic_id");
+      if (req.user?.role === "receptionist") {
+        const assigned = await fetchAssignedDoctorIds(req.user);
+        if (assigned.length > 0) q = q.in("id", assigned);
+      }
+      const r2 = await q;
+      data = r2.data;
+      error = r2.error;
+    }
 
     if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
-    return res.json({ success: true, doctors: data ?? [] });
+    const now = Date.now();
+    const rows = (data ?? ([] as unknown[])).map((d) => {
+      const row = d as Record<string, unknown>;
+      const raw = row.last_portal_heartbeat_at;
+      const ts = raw ? new Date(String(raw)).getTime() : NaN;
+      const online = Number.isFinite(ts) && now - ts < PRESENCE_ONLINE_MS;
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        name: row.name,
+        role: row.role,
+        clinic_id: row.clinic_id,
+        online,
+      };
+    });
+    const onlineDoctors = rows.filter((r: { online?: boolean }) => r.online);
+    const offlineDoctors = rows.filter((r: { online?: boolean }) => !r.online);
+    const doctorsSorted = [...onlineDoctors, ...offlineDoctors];
+    return res.json({
+      success: true,
+      doctors: doctorsSorted,
+      onlineDoctors,
+      offlineDoctors,
+    });
   }
+);
+
+/**
+ * POST /api/staff/presence-heartbeat
+ * Doctor / independent (and optional reception) — marks portal session so reception sees "online".
+ */
+router.post(
+  "/presence-heartbeat",
+  authMiddleware,
+  requireRole("doctor", "receptionist", "independent"),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) return sendJsonError(res, 401, "Unauthorized", "UNAUTHORIZED");
+    const supabase = getSupabaseClient();
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("users")
+      .update({ last_portal_heartbeat_at: now, updated_at: now })
+      .eq("id", req.user.userId);
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    res.json({ success: true, at: now });
+  })
+);
+
+/**
+ * POST /api/staff/me/payment-qr
+ * Multipart file — solo doctor / independent (or any staff) personal UPI QR stored on users row.
+ */
+router.post(
+  "/me/payment-qr",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin", "clinic-admin"),
+  uploadPaymentQr.single("file"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = req.file;
+    if (!file) throw new ValidationError("file is required");
+    if (!req.user) return sendJsonError(res, 401, "Unauthorized", "UNAUTHORIZED");
+    await ensureClinicAssetsBucket();
+    const uploaded = await SupabaseStorageService.uploadDocument({
+      bucket: CLINIC_ASSETS_BUCKET,
+      fileName: file.originalname,
+      file: file.buffer,
+      contentType: file.mimetype,
+      prefix: `${req.user.userId}/payment_qr`,
+    });
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from("users")
+      .update({
+        payment_qr_storage_path: uploaded.path,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", req.user.userId);
+    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    res.json({ success: true, path: uploaded.path });
+  })
 );
 
 /**
@@ -69,14 +179,13 @@ router.get(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
 
     const { data: clinic, error } = await supabase
       .from("clinics")
-      .select("id, name, phone, address, email, letterhead_storage_path, letterhead_mime, letterhead_field_map, payment_qr_storage_path")
+      .select(
+        "id, name, phone, address, email, clinic_code, letterhead_storage_path, letterhead_mime, letterhead_field_map, payment_qr_storage_path"
+      )
       .eq("id", clinicId)
       .single();
 
@@ -84,6 +193,7 @@ router.get(
 
     let letterheadSignedUrl: string | null = null;
     let paymentQrSignedUrl: string | null = null;
+    let userPaymentQrSignedUrl: string | null = null;
     try {
       if (clinic.letterhead_storage_path) {
         letterheadSignedUrl = await SupabaseStorageService.getSignedUrl(
@@ -99,6 +209,18 @@ router.get(
           3600
         );
       }
+      const { data: urow } = await supabase
+        .from("users")
+        .select("payment_qr_storage_path")
+        .eq("id", req.user!.userId)
+        .maybeSingle();
+      if (urow?.payment_qr_storage_path) {
+        userPaymentQrSignedUrl = await SupabaseStorageService.getSignedUrl(
+          CLINIC_ASSETS_BUCKET,
+          urow.payment_qr_storage_path,
+          3600
+        );
+      }
     } catch {
       /* bucket missing or path invalid */
     }
@@ -111,6 +233,7 @@ router.get(
         phone: clinic.phone,
         address: clinic.address,
         email: clinic.email,
+        clinic_code: (clinic as { clinic_code?: string }).clinic_code ?? null,
       },
       letterhead: {
         signedUrl: letterheadSignedUrl,
@@ -118,6 +241,7 @@ router.get(
         fieldMap: clinic.letterhead_field_map ?? {},
       },
       paymentQrSignedUrl,
+      userPaymentQrSignedUrl,
     });
   }
 );

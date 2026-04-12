@@ -219,7 +219,7 @@ router.post(
 
 /**
  * POST /api/auth/password-change/request-otp
- * Authenticated staff: OTP sent to registered phone for password change.
+ * Body: { currentPassword: string, phone: string } — must match account phone; then OTP is sent.
  */
 router.post(
   "/password-change/request-otp",
@@ -228,7 +228,17 @@ router.post(
     if (!req.user) {
       throw new ValidationError("Unauthorized");
     }
-    const result = await OtpAuthService.sendPasswordChangeOtpForUser(req.user.userId);
+    const { currentPassword, phone } = req.body as { currentPassword?: string; phone?: string };
+    let result: { sessionId: string; expiresAt: string };
+    if (currentPassword && phone) {
+      result = await OtpAuthService.sendPasswordChangeOtpWithPasswordAndPhone(
+        req.user.userId,
+        currentPassword,
+        phone
+      );
+    } else {
+      result = await OtpAuthService.sendPasswordChangeOtpForUser(req.user.userId);
+    }
     res.json({
       success: true,
       sessionId: result.sessionId,

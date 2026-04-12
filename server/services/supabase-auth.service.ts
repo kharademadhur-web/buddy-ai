@@ -32,6 +32,7 @@ export interface LoginResponse {
     phone: string | null;
     role: string;
     clinic_id: string | null;
+    clinic_code?: string | null;
   };
 }
 
@@ -239,6 +240,16 @@ export class SupabaseAuthService {
         })
         .eq("id", user.id);
 
+      let clinic_code: string | null = null;
+      if (user.clinic_id) {
+        const { data: clinicMeta } = await supabase
+          .from("clinics")
+          .select("clinic_code")
+          .eq("id", user.clinic_id)
+          .maybeSingle();
+        clinic_code = (clinicMeta as { clinic_code?: string } | null)?.clinic_code ?? null;
+      }
+
       // Generate JWT tokens
       const tokenPayload: JWTPayload = {
         userId: user.id,
@@ -269,6 +280,7 @@ export class SupabaseAuthService {
             phone: user.phone,
             role: user.role,
             clinic_id: user.clinic_id,
+            clinic_code,
           },
         },
       };
@@ -444,6 +456,21 @@ export class SupabaseAuthService {
       console.error("setPasswordAfterOtp error:", error);
       return { success: false, error: "Failed to update password" };
     }
+  }
+
+  /** Verify current password without changing it (e.g. before OTP step). */
+  static async verifyCurrentPassword(
+    userId: string,
+    password: string
+  ): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("password_hash")
+      .eq("id", userId)
+      .single();
+    if (error || !user?.password_hash) return false;
+    return verifyPassword(password, user.password_hash);
   }
 
   /**

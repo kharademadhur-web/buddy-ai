@@ -46,8 +46,8 @@ export default function AdminOnboarding() {
         throw new Error("You are not logged in. Open Admin Login and sign in as Super Admin, then try again.");
       }
 
-      // Separate the letterhead file from the JSON payload
-      const { letterheadFile, ...clinicJson } = data;
+      // Separate uploaded files from the JSON payload
+      const { letterheadFile, paymentQrFile, ...clinicJson } = data;
 
       const res = await apiFetch("/api/admin/clinics", {
         method: "POST",
@@ -62,23 +62,31 @@ export default function AdminOnboarding() {
       const clinic = json.clinic;
       setCreatedClinic(clinic);
 
-      // Upload letterhead if provided
-      if (letterheadFile instanceof File && clinic?.id) {
+      const uploadAsset = async (kind: "letterhead" | "payment_qr", file: File) => {
+        const fd = new FormData();
+        fd.append("kind", kind);
+        fd.append("file", file);
+        const uploadRes = await apiFetch(`/api/admin/clinics/${clinic.id}/clinic-asset`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+        const uploadJson = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok || !uploadJson.success) {
+          console.warn(`${kind} upload failed:`, uploadJson);
+        }
+      };
+
+      if (clinic?.id) {
         try {
-          const fd = new FormData();
-          fd.append("kind", "letterhead");
-          fd.append("file", letterheadFile);
-          const uploadRes = await apiFetch(`/api/admin/clinics/${clinic.id}/clinic-asset`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: fd,
-          });
-          const uploadJson = await uploadRes.json().catch(() => ({}));
-          if (!uploadRes.ok || !uploadJson.success) {
-            console.warn("Letterhead upload failed:", uploadJson);
-          }
+          if (letterheadFile instanceof File) await uploadAsset("letterhead", letterheadFile);
         } catch (uploadErr) {
           console.warn("Letterhead upload error:", uploadErr);
+        }
+        try {
+          if (paymentQrFile instanceof File) await uploadAsset("payment_qr", paymentQrFile);
+        } catch (uploadErr) {
+          console.warn("Payment QR upload error:", uploadErr);
         }
       }
 

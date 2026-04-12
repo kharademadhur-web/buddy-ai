@@ -64,7 +64,10 @@ export default function PortalLogin() {
         <Card className="shadow-lg">
           <CardHeader className="space-y-1">
             <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use the User ID issued during onboarding</CardDescription>
+            <CardDescription>
+              Use the User ID issued during onboarding. User ID cannot be changed; use Change password on the dashboard
+              (current password + registered phone OTP) to update your password.
+            </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4">

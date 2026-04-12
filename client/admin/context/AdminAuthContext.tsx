@@ -16,6 +16,8 @@ export interface AdminUser {
   phone: string | null;
   role: AdminRole;
   clinic_id: string | null;
+  /** Set at login from clinics.clinic_code */
+  clinic_code?: string | null;
   loginTime: Date;
 }
 
@@ -154,6 +156,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         phone: backendUser.phone,
         role: backendUser.role,
         clinic_id: backendUser.clinic_id,
+        clinic_code: backendUser.clinic_code ?? null,
         loginTime: new Date(),
       };
 

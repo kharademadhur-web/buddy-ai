@@ -7,13 +7,18 @@ import Sidebar from "@/components/Sidebar";
 import QueueList, { type QueueRow } from "@/components/QueueList";
 import PatientForm from "@/components/PatientForm";
 import ReceptionPendingBills from "@/components/ReceptionPendingBills";
-import { Users, TrendingUp } from "lucide-react";
+import { Users, TrendingUp, KeyRound } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import PortalChangePasswordDialog from "@/components/PortalChangePasswordDialog";
+import { apiFetch } from "@/lib/api-base";
 import { toast } from "sonner";
 
 export default function ReceptionDashboard() {
   const location = useLocation();
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
+  const [pwOpen, setPwOpen] = useState(false);
+  const [paymentQrUrl, setPaymentQrUrl] = useState<string | null>(null);
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId);
   const { summary, refetch: refetchSummary } = useBillingSummary(clinicId);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -29,6 +34,23 @@ export default function ReceptionDashboard() {
   const totalCollected = summary?.totalCollected ?? 0;
 
   // Sidebar: /reception-dashboard#queue | #rx (intake) | #settings
+  useEffect(() => {
+    if (!clinicId) return;
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(clinicId)}`
+        );
+        const j = await res.json();
+        if (res.ok && j.success) {
+          setPaymentQrUrl(j.paymentQrSignedUrl || null);
+        }
+      } catch {
+        setPaymentQrUrl(null);
+      }
+    })();
+  }, [clinicId]);
+
   useEffect(() => {
     const raw = location.hash.replace(/^#/, "");
     if (!raw) return;
@@ -48,9 +70,27 @@ export default function ReceptionDashboard() {
 
       <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0">
         <div className="p-4 sm:p-6 lg:p-8">
-          <h1 id="staff-settings" className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8 scroll-mt-24">
-            Reception Dashboard
-          </h1>
+          <div className="mb-4 sm:mb-8 scroll-mt-24 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h1 id="staff-settings" className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Reception Dashboard
+              </h1>
+              {user?.name ? (
+                <p className="mt-1 text-sm text-gray-600">
+                  Signed in as <span className="font-medium text-gray-800">{user.name}</span>
+                  {user.user_id ? (
+                    <span className="ml-2 font-mono text-xs text-gray-500">{user.user_id}</span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+            <Button type="button" variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => setPwOpen(true)}>
+              <KeyRound className="h-4 w-4" />
+              Change password
+            </Button>
+          </div>
+
+          <PortalChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
 
           {!clinicId && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
@@ -110,11 +150,17 @@ export default function ReceptionDashboard() {
               </p>
             </div>
             <div className="shrink-0">
-              <img
-                src={import.meta.env.VITE_PAYMENT_QR_URL || "/payment-qr.png"}
-                alt="Payment QR"
-                className="w-40 h-40 rounded-lg border border-gray-200 bg-white object-contain"
-              />
+              {paymentQrUrl ? (
+                <img
+                  src={paymentQrUrl}
+                  alt="Clinic payment QR"
+                  className="w-40 h-40 rounded-lg border border-gray-200 bg-white object-contain"
+                />
+              ) : (
+                <div className="w-40 h-40 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-center text-xs text-gray-500 p-2">
+                  Upload clinic payment QR in Admin → clinic (onboarding or clinic detail).
+                </div>
+              )}
             </div>
           </div>
 

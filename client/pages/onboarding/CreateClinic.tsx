@@ -21,6 +21,7 @@ export function CreateClinic({
     phone: "",
     email: "",
     letterheadFile: null as File | null,
+    paymentQrFile: null as File | null,
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -213,6 +214,45 @@ export function CreateClinic({
             </div>
           )}
           <p className="text-xs text-gray-500">Optional — can be added later from clinic settings.</p>
+        </div>
+
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileImage className="w-5 h-5 text-emerald-700" />
+            <p className="text-sm font-semibold text-gray-800">Business payment QR (UPI)</p>
+          </div>
+          <p className="text-xs text-gray-600">
+            Upload your clinic&apos;s UPI QR for patient payments. It appears on the reception dashboard.
+          </p>
+          <label
+            htmlFor="paymentQrFile"
+            className={`flex items-center gap-3 cursor-pointer rounded-lg border-2 border-dashed p-4 transition-colors ${
+              formData.paymentQrFile
+                ? "border-emerald-400 bg-emerald-50"
+                : "border-emerald-300 hover:border-emerald-400 bg-white"
+            }`}
+          >
+            <Upload className={`w-5 h-5 ${formData.paymentQrFile ? "text-emerald-600" : "text-emerald-500"}`} />
+            <div className="flex-1 min-w-0">
+              {formData.paymentQrFile ? (
+                <p className="text-sm font-medium text-emerald-800 truncate">{formData.paymentQrFile.name}</p>
+              ) : (
+                <p className="text-sm text-gray-500">Click to upload payment QR (JPG/PNG)</p>
+              )}
+            </div>
+            <Input
+              id="paymentQrFile"
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setFormData((prev) => ({ ...prev, paymentQrFile: file }));
+              }}
+              disabled={isLoading}
+              className="sr-only"
+            />
+          </label>
+          <p className="text-xs text-gray-500">Optional — can be added later from clinic detail.</p>
         </div>
 
         <Button

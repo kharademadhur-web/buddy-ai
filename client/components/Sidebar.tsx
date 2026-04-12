@@ -13,7 +13,8 @@ import {
   Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "@/lib/api-base";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/context/AdminAuthContext";
@@ -30,6 +31,24 @@ export default function Sidebar({ role }: SidebarProps) {
     userManagement: false,
   });
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [portalClinic, setPortalClinic] = useState<{ name?: string; clinic_code?: string | null }>({});
+
+  useEffect(() => {
+    if (role === "admin") return;
+    const cid = adminAuth.user?.clinic_id;
+    if (!cid) return;
+    void apiFetch(`/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(cid)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.clinic) {
+          setPortalClinic({
+            name: j.clinic.name,
+            clinic_code: j.clinic.clinic_code ?? null,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [role, adminAuth.user?.clinic_id]);
 
   const menuItems = {
     doctor: [
@@ -109,6 +128,22 @@ export default function Sidebar({ role }: SidebarProps) {
                 <div>
                   <h1 className="font-bold text-gray-900">SmartClinic</h1>
                   <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
+                  {portalClinic.name ? (
+                    <p className="text-xs text-gray-700 mt-1 font-medium truncate max-w-[200px]" title={portalClinic.name}>
+                      {portalClinic.name}
+                    </p>
+                  ) : null}
+                  {(adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      Clinic ID:{" "}
+                      <span className="font-mono">{adminAuth.user?.clinic_code || portalClinic.clinic_code}</span>
+                    </p>
+                  ) : null}
+                  {adminAuth.user?.user_id ? (
+                    <p className="text-[10px] text-gray-500">
+                      Your ID: <span className="font-mono">{adminAuth.user.user_id}</span>
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -208,6 +243,22 @@ export default function Sidebar({ role }: SidebarProps) {
           <div>
             <h1 className="font-bold text-gray-900">SmartClinic</h1>
             <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
+            {role !== "admin" && portalClinic.name ? (
+              <p className="text-xs text-gray-700 mt-1 font-medium truncate" title={portalClinic.name}>
+                {portalClinic.name}
+              </p>
+            ) : null}
+            {role !== "admin" && (adminAuth.user?.clinic_code || portalClinic.clinic_code) ? (
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                Clinic ID:{" "}
+                <span className="font-mono">{adminAuth.user?.clinic_code || portalClinic.clinic_code}</span>
+              </p>
+            ) : null}
+            {role !== "admin" && adminAuth.user?.user_id ? (
+              <p className="text-[10px] text-gray-500">
+                Your ID: <span className="font-mono">{adminAuth.user.user_id}</span>
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

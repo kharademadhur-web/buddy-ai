@@ -6,6 +6,7 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 interface DoctorOption {
   id: string;
   name: string;
+  online?: boolean;
 }
 
 interface ClinicLetterhead {
@@ -22,7 +23,8 @@ interface PatientFormProps {
 export default function PatientForm({ onSuccess }: PatientFormProps) {
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id;
-  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [onlineDoctors, setOnlineDoctors] = useState<DoctorOption[]>([]);
+  const [offlineDoctors, setOfflineDoctors] = useState<DoctorOption[]>([]);
   const [doctorUserId, setDoctorUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,28 +42,70 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
     heartRate: "",
   });
 
-  // Fetch doctors
-  useEffect(() => {
+  const loadDoctors = async () => {
     if (!clinicId) return;
-    (async () => {
+    try {
       const res = await apiFetch(`/api/staff/doctors?clinicId=${encodeURIComponent(clinicId)}`);
       const j = await res.json();
       if (!res.ok) {
         setError(apiErrorMessage(j));
-        setDoctors([]);
+        setOnlineDoctors([]);
+        setOfflineDoctors([]);
         return;
       }
-      if (j.success && j.doctors?.length) {
-        setDoctors(j.doctors.map((d: { id: string; name: string }) => ({ id: d.id, name: d.name })));
-        setDoctorUserId((prev: string) => prev || j.doctors[0].id);
-        setError(null);
-      } else {
-        setDoctors([]);
+      if (!j.success) {
+        setOnlineDoctors([]);
+        setOfflineDoctors([]);
+        setError("Could not load doctors.");
+        return;
+      }
+      const raw = (j.doctors ?? []) as Array<{ id: string; name: string; online?: boolean }>;
+      let on: DoctorOption[] = (j.onlineDoctors ?? []).map((d: { id: string; name: string }) => ({
+        id: d.id,
+        name: d.name,
+        online: true,
+      }));
+      let off: DoctorOption[] = (j.offlineDoctors ?? []).map((d: { id: string; name: string }) => ({
+        id: d.id,
+        name: d.name,
+        online: false,
+      }));
+      // Older APIs only return `doctors[]` (no onlineDoctors/offlineDoctors) — still populate the dropdown.
+      if (!on.length && !off.length && raw.length > 0) {
+        const withFlag = raw.map((d) => ({
+          id: d.id,
+          name: d.name,
+          online: d.online === true,
+        }));
+        on = withFlag.filter((d) => d.online);
+        off = withFlag.filter((d) => !d.online).map((d) => ({ ...d, online: false }));
+      }
+      if (!on.length && !off.length) {
+        setOnlineDoctors([]);
+        setOfflineDoctors([]);
         setError(
           "No doctors available. Ask your admin to add doctors and assign them to your receptionist account in User Management."
         );
+        return;
       }
-    })();
+      setOnlineDoctors(on);
+      setOfflineDoctors(off);
+      setDoctorUserId((prev) => {
+        const all = [...on, ...off];
+        if (prev && all.some((d) => d.id === prev)) return prev;
+        return on[0]?.id ?? off[0]?.id ?? "";
+      });
+      setError(null);
+    } catch {
+      setError("Failed to load doctors.");
+    }
+  };
+
+  useEffect(() => {
+    if (!clinicId) return;
+    void loadDoctors();
+    const t = setInterval(() => void loadDoctors(), 15_000);
+    return () => clearInterval(t);
   }, [clinicId]);
 
   // Fetch clinic letterhead
@@ -283,6 +327,11 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
 
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1">Doctor *</label>
+          <p className="text-xs text-gray-500 mb-1">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 align-middle mr-1" /> Online
+            <span className="mx-2" />
+            <span className="inline-block w-2 h-2 rounded-full bg-red-500 align-middle mr-1" /> Offline
+          </p>
           <select
             value={doctorUserId}
             onChange={(e) => setDoctorUserId(e.target.value)}
@@ -290,11 +339,24 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
             required
           >
             <option value="">Select doctor</option>
-            {doctors.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
+            {onlineDoctors.length > 0 && (
+              <optgroup label="Online (logged into portal)">
+                {onlineDoctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    ● {d.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {offlineDoctors.length > 0 && (
+              <optgroup label="Offline">
+                {offlineDoctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    ● {d.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
 
