@@ -209,15 +209,15 @@ router.get(
           3600
         );
       }
-      const { data: urow } = await supabase
+      const ures = await supabase
         .from("users")
         .select("payment_qr_storage_path")
         .eq("id", req.user!.userId)
         .maybeSingle();
-      if (urow?.payment_qr_storage_path) {
+      if (!ures.error && ures.data?.payment_qr_storage_path) {
         userPaymentQrSignedUrl = await SupabaseStorageService.getSignedUrl(
           CLINIC_ASSETS_BUCKET,
-          urow.payment_qr_storage_path,
+          ures.data.payment_qr_storage_path,
           3600
         );
       }

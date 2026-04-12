@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import PortalChangePasswordDialog from "@/components/PortalChangePasswordDialog";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
-import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 import type { HandwritingStrokeBundle } from "@/components/PrescriptionCanvas";
 import Sidebar from "@/components/Sidebar";
 import QueueList, { type QueueRow } from "@/components/QueueList";
@@ -99,7 +99,7 @@ export default function DoctorDashboard() {
       if (!res.ok) throw new Error(apiErrorMessage(j) || "Upload failed");
       toast.success("Personal payment QR saved.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(errorMessageFromUnknown(e, "Upload failed"));
     } finally {
       setQrUploading(false);
     }

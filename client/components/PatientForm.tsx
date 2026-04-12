@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Loader2, Building2 } from "lucide-react";
-import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 
 interface DoctorOption {
@@ -174,7 +174,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         }),
       });
       const pj = await pr.json();
-      if (!pr.ok) throw new Error(pj.error || "Failed to create patient");
+      if (!pr.ok) throw new Error(apiErrorMessage(pj) || "Failed to create patient");
       const patientId = pj.patient?.id;
       if (!patientId) throw new Error("Invalid patient response");
 
@@ -202,7 +202,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
           }
         );
         const vj = await vr.json().catch(() => ({}));
-        if (!vr.ok) throw new Error((vj as { error?: string }).error || "Failed to save vitals");
+        if (!vr.ok) throw new Error(apiErrorMessage(vj) || "Failed to save vitals");
       }
 
       const now = new Date().toISOString();
@@ -218,7 +218,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         }),
       });
       const aj = await ar.json();
-      if (!ar.ok) throw new Error(aj.error || "Failed to create appointment");
+      if (!ar.ok) throw new Error(apiErrorMessage(aj) || "Failed to create appointment");
       const appointmentId = aj.appointment?.id;
       if (!appointmentId) throw new Error("Invalid appointment response");
 
@@ -244,7 +244,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         }),
       });
       const cj = await cr.json();
-      if (!cr.ok) throw new Error(cj.error || "Failed to check in");
+      if (!cr.ok) throw new Error(apiErrorMessage(cj) || "Failed to check in");
 
       const br = await apiFetch("/api/billing", {
         method: "POST",
@@ -258,7 +258,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         }),
       });
       const bj = await br.json();
-      if (!br.ok) throw new Error(bj.error || "Failed to create bill");
+      if (!br.ok) throw new Error(apiErrorMessage(bj) || "Failed to create bill");
 
       setFormData({
         name: "",
@@ -273,7 +273,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
       });
       onSuccess?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(errorMessageFromUnknown(err, "Request failed"));
     } finally {
       setSubmitting(false);
     }
