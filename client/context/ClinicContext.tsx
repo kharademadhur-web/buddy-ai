@@ -6,6 +6,7 @@ export interface Letterhead {
   id: string;
   name: string;
   templateUrl: string;
+  mime?: string;
   clinicName: string;
   clinicAddress: string;
   clinicPhone: string;

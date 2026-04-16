@@ -12,6 +12,12 @@ import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
+function isMissingBillsCreatedByColumnError(message: string): boolean {
+  return /Could not find the 'created_by' column of 'bills'|column .*created_by.* does not exist/i.test(
+    message
+  );
+}
+
 /**
  * GET /api/billing/summary?clinicId=&date=YYYY-MM-DD
  */
@@ -153,19 +159,33 @@ router.post(
       req.user?.role === "super-admin"
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
-    const { data, error } = await supabase
+    const billInsert: Record<string, unknown> = {
+      clinic_id: parsed.data.clinicId,
+      appointment_id: parsed.data.appointmentId,
+      patient_id: parsed.data.patientId,
+      created_by: req.user?.userId ?? null,
+      consultation_fee: parsed.data.consultationFee,
+      medicine_cost: parsed.data.medicineCost,
+      total_amount: total,
+    };
+
+    let { data, error } = await supabase
       .from("bills")
-      .insert({
-        clinic_id: parsed.data.clinicId,
-        appointment_id: parsed.data.appointmentId,
-        patient_id: parsed.data.patientId,
-        created_by: req.user?.userId ?? null,
-        consultation_fee: parsed.data.consultationFee,
-        medicine_cost: parsed.data.medicineCost,
-        total_amount: total,
-      })
+      .insert(billInsert)
       .select("*")
       .single();
+
+    if (error && isMissingBillsCreatedByColumnError(error.message)) {
+      console.warn("[billing] bills.created_by missing; retrying insert without created_by");
+      delete billInsert.created_by;
+      const retry = await supabase
+        .from("bills")
+        .insert(billInsert)
+        .select("*")
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to create bill", "INTERNAL_SERVER_ERROR");
 

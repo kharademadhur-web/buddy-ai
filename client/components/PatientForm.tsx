@@ -11,6 +11,7 @@ interface DoctorOption {
 
 interface ClinicLetterhead {
   signedUrl: string | null;
+  mime: string | null;
   clinicName: string;
   clinicPhone: string;
   clinicAddress: string;
@@ -130,6 +131,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
         if (res.ok && j.success) {
           setLetterhead({
             signedUrl: j.letterhead?.signedUrl ?? null,
+            mime: j.letterhead?.mime ?? null,
             clinicName: j.clinic?.name ?? "",
             clinicPhone: j.clinic?.phone ?? "",
             clinicAddress: j.clinic?.address ?? "",
@@ -303,11 +305,35 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
       {/* ── Letterhead Header ── */}
       {letterhead?.signedUrl ? (
         <div className="relative w-full">
-          <img
-            src={letterhead.signedUrl}
-            alt="Clinic letterhead"
-            className="w-full object-cover max-h-40"
-          />
+          {String(letterhead.mime || "").toLowerCase().includes("pdf") ? (
+            <div className="bg-white">
+              <object
+                data={letterhead.signedUrl}
+                type="application/pdf"
+                className="w-full h-44"
+                aria-label="Clinic letterhead PDF"
+              >
+                <div className="px-4 py-3 text-sm text-blue-700">
+                  Letterhead PDF loaded.
+                  {" "}
+                  <a
+                    href={letterhead.signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold underline"
+                  >
+                    Open letterhead
+                  </a>
+                </div>
+              </object>
+            </div>
+          ) : (
+            <img
+              src={letterhead.signedUrl}
+              alt="Clinic letterhead"
+              className="w-full object-cover max-h-40"
+            />
+          )}
           {/* Overlay patient slip label */}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-4 py-2">
             <p className="text-white text-xs font-semibold tracking-wide">PATIENT INTAKE SLIP</p>

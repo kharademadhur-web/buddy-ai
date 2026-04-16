@@ -26,12 +26,13 @@ export default function ActivePatientPanel({
   }
 
   const hasLetterhead = Boolean(letterhead?.templateUrl);
+  const isPdfLetterhead = String(letterhead?.mime || "").toLowerCase().includes("pdf");
 
   return (
     <div className="rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* ── Letterhead background (clinic branding) ── */}
       <div className="relative w-full">
-        {hasLetterhead ? (
+        {hasLetterhead && !isPdfLetterhead ? (
           <>
             {/* Actual letterhead image as background */}
             <img
@@ -61,6 +62,16 @@ export default function ActivePatientPanel({
             {letterhead?.clinicPhone && (
               <p className="text-xs opacity-90">{letterhead.clinicPhone}</p>
             )}
+            {hasLetterhead && isPdfLetterhead ? (
+              <a
+                href={letterhead?.templateUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block mt-2 rounded bg-white/20 px-2 py-1 text-[11px] font-semibold hover:bg-white/30"
+              >
+                Open letterhead PDF
+              </a>
+            ) : null}
           </div>
           <div className="flex items-end justify-between text-white">
             <div>

@@ -10,8 +10,8 @@ import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
-function isMissingConsultationAiColumnError(message: string): boolean {
-  return /Could not find the '(ai_summary|ai_transcript|recording_consent)' column of 'consultations'|column .* does not exist/i.test(
+function isMissingConsultationOptionalColumnError(message: string): boolean {
+  return /Could not find the '(ai_summary|ai_transcript|recording_consent|handwriting_strokes|handwriting_image_path)' column of 'consultations'|column .* does not exist/i.test(
     message
   );
 }
@@ -147,12 +147,13 @@ router.post(
 
     if (
       consultationRes.error &&
-      isMissingConsultationAiColumnError(consultationRes.error.message)
+      isMissingConsultationOptionalColumnError(consultationRes.error.message)
     ) {
       console.warn(
-        "[consultations] AI columns missing in schema; retrying without AI fields:",
+        "[consultations] optional columns missing in schema; retrying with safe subset:",
         consultationRes.error.message
       );
+      delete consultationInsert.handwriting_strokes;
       delete consultationInsert.ai_transcript;
       delete consultationInsert.ai_summary;
       delete consultationInsert.recording_consent;
@@ -404,7 +405,7 @@ router.patch(
       }
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("consultations")
       .update({
         handwriting_strokes: parsed.data.strokes as object,
@@ -413,6 +414,15 @@ router.patch(
       .eq("id", req.params.consultationId)
       .select("*")
       .single();
+
+    if (error && isMissingConsultationOptionalColumnError(error.message)) {
+      return sendJsonError(
+        res,
+        503,
+        "Database migration required: consultations.handwriting_strokes",
+        "MIGRATION_REQUIRED"
+      );
+    }
 
     if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to update", "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, consultation: data });

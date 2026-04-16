@@ -120,6 +120,7 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
               id: clinicId,
               name: j.clinic?.name ?? "Clinic",
               templateUrl: j.letterhead.signedUrl,
+              mime: j.letterhead?.mime ?? undefined,
               clinicName: j.clinic?.name ?? "Clinic",
               clinicAddress: j.clinic?.address ?? "",
               clinicPhone: j.clinic?.phone ?? "",
