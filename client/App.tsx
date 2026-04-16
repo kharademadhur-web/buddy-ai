@@ -9,6 +9,7 @@ import { ClinicProvider } from "./context/ClinicContext";
 
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
+import { Profile } from "./pages/Profile";
 
 // New admin pages
 import AdminLogin from "./pages/AdminLogin";
@@ -35,7 +36,7 @@ export default function App() {
 
                 {/* Staff dashboards (protected) */}
                 <Route
-                  path="/doctor-dashboard"
+                  path="/doctor-dashboard/*"
                   element={
                     <AdminProtectedRoute
                       requiredRole={["doctor", "independent"]}
@@ -46,7 +47,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/reception-dashboard"
+                  path="/reception-dashboard/*"
                   element={
                     <AdminProtectedRoute
                       requiredRole={["receptionist"]}
@@ -66,6 +67,23 @@ export default function App() {
                   element={
                     <AdminProtectedRoute requiredRole={["super-admin", "clinic-admin"]}>
                       <AdminDashboard />
+                    </AdminProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/profile"
+                  element={
+                    <AdminProtectedRoute redirectTo="/portal/login">
+                      <Navigate to="/profile/basic" replace />
+                    </AdminProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile/:section"
+                  element={
+                    <AdminProtectedRoute redirectTo="/portal/login">
+                      <Profile />
                     </AdminProtectedRoute>
                   }
                 />

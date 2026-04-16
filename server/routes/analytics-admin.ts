@@ -9,6 +9,7 @@ import {
   clinicBillStats,
 } from "../services/bill-analytics.service";
 import { syncClinicPaymentDueIfExpired } from "../lib/clinic-subscription-access";
+import DeviceApprovalService from "../services/device-approval.service";
 
 const router = Router();
 
@@ -433,36 +434,27 @@ router.get(
     const supabase = getSupabaseClient();
 
     const scoped = effectiveClinicFilter(req, undefined);
-    let dq = supabase
-      .from("device_approval_requests")
-      .select(
-        `
-        id, user_id, new_device_id, status, created_at,
-        users(user_id, name, phone, clinic_id)
-      `
-      )
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
 
+    let clinicUserIds: string[] | null = null;
     if (scoped) {
       const { data: clinicUsers } = await supabase.from("users").select("id").eq("clinic_id", scoped);
       const ids = (clinicUsers || []).map((u) => u.id);
-      if (ids.length) dq = dq.in("user_id", ids);
-      else {
+      if (!ids.length) {
         return res.json({ success: true, requests: [], count: 0 });
       }
+      clinicUserIds = ids;
     }
 
-    const { data: requests, error } = await dq;
-
-    if (error) {
-      throw new Error(`Failed to fetch device requests: ${error.message}`);
-    }
+    const requests = await DeviceApprovalService.listDeviceRequestsWithUsers(
+      "pending",
+      500,
+      clinicUserIds
+    );
 
     res.json({
       success: true,
-      requests: requests || [],
-      count: requests?.length || 0,
+      requests,
+      count: requests.length,
     });
   })
 );

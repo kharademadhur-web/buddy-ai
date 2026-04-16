@@ -38,41 +38,29 @@ router.get(
 
     const supabase = getSupabaseClient();
 
-    let query = supabase
-      .from("device_approval_requests")
-      .select(
-        `
-        id, user_id, new_device_id, status, 
-        created_at,
-        users(id, user_id, name, phone, clinic_id, email)
-      `
-      )
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
-
     const effectiveClinic =
       req.user?.role === "clinic-admin" ? req.user.clinicId : (clinicId as string | undefined);
+
+    let clinicUserIds: string[] | null = null;
     if (effectiveClinic) {
       const { data: clinicUsers } = await supabase.from("users").select("id").eq("clinic_id", effectiveClinic);
       const ids = (clinicUsers || []).map((u) => u.id);
-      if (ids.length) query = query.in("user_id", ids);
-      else {
+      if (!ids.length) {
         return res.json({ success: true, requests: [], count: 0 });
       }
+      clinicUserIds = ids;
     }
 
-    const { data: requests, error } = await query;
-
-    if (error) {
-      throw new Error(
-        `Failed to fetch pending requests: ${error.message}`
-      );
-    }
+    const requests = await DeviceApprovalService.listDeviceRequestsWithUsers(
+      "pending",
+      500,
+      clinicUserIds
+    );
 
     res.json({
       success: true,
-      requests: requests || [],
-      count: requests?.length || 0,
+      requests,
+      count: requests.length,
     });
   })
 );
@@ -89,41 +77,28 @@ router.get(
     const { status = "pending", limit = 50 } = req.query;
 
     const supabase = getSupabaseClient();
+    const lim = Math.min(200, Math.max(1, parseInt(String(limit), 10) || 50));
 
-    let rq = supabase
-      .from("device_approval_requests")
-      .select(
-        `
-        id, user_id, new_device_id, status, 
-        created_at,
-        users(user_id, name, phone, clinic_id)
-      `
-      )
-      .eq("status", status as string)
-      .order("created_at", { ascending: false })
-      .limit(parseInt(limit as string));
-
+    let clinicUserIds: string[] | null = null;
     if (req.user?.role === "clinic-admin" && req.user.clinicId) {
       const { data: clinicUsers } = await supabase.from("users").select("id").eq("clinic_id", req.user.clinicId);
       const ids = (clinicUsers || []).map((u) => u.id);
-      if (ids.length) rq = rq.in("user_id", ids);
-      else {
+      if (!ids.length) {
         return res.json({ success: true, requests: [], count: 0 });
       }
+      clinicUserIds = ids;
     }
 
-    const { data: requests, error } = await rq;
-
-    if (error) {
-      throw new Error(
-        `Failed to fetch requests: ${error.message}`
-      );
-    }
+    const requests = await DeviceApprovalService.listDeviceRequestsWithUsers(
+      status as string,
+      lim,
+      clinicUserIds
+    );
 
     res.json({
       success: true,
-      requests: requests || [],
-      count: requests?.length || 0,
+      requests,
+      count: requests.length,
     });
   })
 );

@@ -42,6 +42,16 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
     heartRate: "",
   });
 
+  const parseOptionalVital = (value: string, min: number, max: number, label: string) => {
+    if (!value.trim()) return null;
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n)) return { error: `${label} must be a number.` };
+    if (n < min || n > max) {
+      return { error: `${label} must be between ${min} and ${max}.` };
+    }
+    return { value: n };
+  };
+
   const loadDoctors = async () => {
     if (!clinicId) return;
     try {
@@ -178,19 +188,21 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
       const patientId = pj.patient?.id;
       if (!patientId) throw new Error("Invalid patient response");
 
+      if (formData.feesPaid < 0) {
+        throw new Error("Consultation fee cannot be negative.");
+      }
+
+      const bpSys = parseOptionalVital(formData.bpSystolic, 50, 250, "BP systolic");
+      if (bpSys?.error) throw new Error(bpSys.error);
+      const bpDia = parseOptionalVital(formData.bpDiastolic, 30, 180, "BP diastolic");
+      if (bpDia?.error) throw new Error(bpDia.error);
+      const hr = parseOptionalVital(formData.heartRate, 30, 240, "Heart rate");
+      if (hr?.error) throw new Error(hr.error);
+
       const vitalsBody: Record<string, unknown> = {};
-      if (formData.bpSystolic.trim()) {
-        const n = parseInt(formData.bpSystolic, 10);
-        if (Number.isFinite(n)) vitalsBody.bpSystolic = n;
-      }
-      if (formData.bpDiastolic.trim()) {
-        const n = parseInt(formData.bpDiastolic, 10);
-        if (Number.isFinite(n)) vitalsBody.bpDiastolic = n;
-      }
-      if (formData.heartRate.trim()) {
-        const n = parseInt(formData.heartRate, 10);
-        if (Number.isFinite(n)) vitalsBody.heartRate = n;
-      }
+      if (typeof bpSys?.value === "number") vitalsBody.bpSystolic = bpSys.value;
+      if (typeof bpDia?.value === "number") vitalsBody.bpDiastolic = bpDia.value;
+      if (typeof hr?.value === "number") vitalsBody.heartRate = hr.value;
       if (formData.symptoms.trim()) vitalsBody.notes = `Intake: ${formData.symptoms.trim()}`;
       if (Object.keys(vitalsBody).length > 0) {
         const vr = await apiFetch(
@@ -202,7 +214,14 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
           }
         );
         const vj = await vr.json().catch(() => ({}));
-        if (!vr.ok) throw new Error(apiErrorMessage(vj) || "Failed to save vitals");
+        if (!vr.ok) {
+          const msg = apiErrorMessage(vj) || "";
+          if (/patient_vitals|schema cache|does not exist|Could not find the table/i.test(msg)) {
+            console.warn("patient_vitals unavailable; continuing without vitals row:", msg);
+          } else {
+            throw new Error(msg || "Failed to save vitals");
+          }
+        }
       }
 
       const now = new Date().toISOString();
@@ -329,6 +348,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
           <label className="block text-sm font-semibold text-gray-700 mb-1">Doctor *</label>
           <p className="text-xs text-gray-500 mb-1">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 align-middle mr-1" /> Online
+            <span className="text-gray-400"> (accepting + portal open)</span>
             <span className="mx-2" />
             <span className="inline-block w-2 h-2 rounded-full bg-red-500 align-middle mr-1" /> Offline
           </p>
@@ -340,7 +360,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
           >
             <option value="">Select doctor</option>
             {onlineDoctors.length > 0 && (
-              <optgroup label="Online (logged into portal)">
+              <optgroup label="Online (accepting patients)">
                 {onlineDoctors.map((d) => (
                   <option key={d.id} value={d.id}>
                     ● {d.name}
@@ -442,6 +462,8 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
               value={formData.bpSystolic}
               onChange={handleChange}
               placeholder="120"
+              min={50}
+              max={250}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
@@ -453,6 +475,8 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
               value={formData.bpDiastolic}
               onChange={handleChange}
               placeholder="80"
+              min={30}
+              max={180}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
@@ -464,6 +488,8 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
               value={formData.heartRate}
               onChange={handleChange}
               placeholder="bpm"
+              min={30}
+              max={240}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
@@ -476,6 +502,7 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
             name="feesPaid"
             value={formData.feesPaid}
             onChange={handleChange}
+            min={0}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>

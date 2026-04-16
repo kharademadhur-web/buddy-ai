@@ -8,6 +8,7 @@ import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-ba
 type DeviceRequest = {
   id: string;
   user_id: string;
+  new_device_id?: string | null;
   device_id?: string | null;
   device_fingerprint?: string | null;
   status: string;
@@ -125,7 +126,10 @@ export default function AdminDeviceApprovals() {
                 <span className="ml-2 font-mono text-xs text-gray-500">{r.users?.user_id}</span>
               </div>
               <div className="text-xs text-gray-600 mt-1">
-                Requested: <span className="font-mono">{r.device_id || r.device_fingerprint || "unknown"}</span>
+                Requested:{" "}
+                <span className="font-mono">
+                  {r.new_device_id || r.device_id || r.device_fingerprint || "unknown"}
+                </span>
               </div>
               <div className="text-xs text-gray-500 mt-1">
                 {new Date(r.created_at).toLocaleString()}

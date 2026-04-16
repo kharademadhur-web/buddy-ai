@@ -71,6 +71,7 @@ jobs:
         run: |
           mkdir -p deploy
           cp -r dist package.json deploy/
+          if [ -d server/sql ]; then cp -r server/sql deploy/server-sql; fi
           cd deploy
           npm install --omit=dev --legacy-peer-deps
 

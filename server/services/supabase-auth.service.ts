@@ -210,14 +210,16 @@ export class SupabaseAuthService {
         );
 
         if (!deviceValidation.valid && deviceValidation.requiresApproval) {
-          // Create device approval request
-          await DeviceApprovalService.requestDeviceApproval(user.id, {
+          const approval = await DeviceApprovalService.requestDeviceApproval(user.id, {
             deviceId,
           });
-
+          if (approval.ok === false) {
+            return { success: false, error: approval.error };
+          }
           return {
             success: false,
-            error: "Device approval required. An approval request has been created.",
+            error:
+              "Device approval required. A pending request is registered — ask your clinic or platform admin to approve this device in Device Approvals.",
           };
         }
 

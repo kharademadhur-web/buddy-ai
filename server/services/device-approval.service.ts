@@ -1,6 +1,11 @@
 import { getSupabaseClient } from "../config/supabase";
 import crypto from "crypto";
 
+/** When `true`, first login auto-binds `users.device_id` without admin approval (legacy behavior). Default: strict first-device approval. */
+function isAutoRegisterFirstDeviceEnabled(): boolean {
+  return process.env.DEVICE_APPROVAL_AUTO_REGISTER_FIRST_DEVICE === "true";
+}
+
 export interface DeviceInfo {
   deviceId: string;
   deviceName?: string;
@@ -11,11 +16,39 @@ export interface DeviceInfo {
 export interface DeviceApprovalRequest {
   id: string;
   user_id: string;
-  device_id: string;
+  /** Legacy name; DB column is `new_device_id`. */
+  device_id?: string;
+  new_device_id?: string;
   device_fingerprint?: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
-  expires_at: string;
+  expires_at?: string;
+}
+
+export type RequestDeviceApprovalResult =
+  | { ok: true; request: DeviceApprovalRequest }
+  | { ok: false; error: string };
+
+function formatDeviceApprovalDbError(err: unknown): string {
+  const code =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: string }).code)
+      : "";
+  const message =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message?: string }).message)
+      : String(err);
+
+  if (
+    code === "42501" ||
+    /permission denied|row-level security|RLS/i.test(message)
+  ) {
+    return (
+      "Could not save the device approval request. Configure SUPABASE_SERVICE_KEY on the API server " +
+      "(Supabase service_role key) so inserts are not blocked by Row Level Security."
+    );
+  }
+  return message || "Failed to create device approval request";
 }
 
 /**
@@ -43,12 +76,19 @@ export async function validateDevice(
       };
     }
 
-    // First login - no device stored yet
+    // First device for this account: require admin approval once, then this browser's id matches forever (until reset/new device).
     if (!user.device_id) {
+      if (isAutoRegisterFirstDeviceEnabled()) {
+        return {
+          valid: true,
+          requiresApproval: false,
+          reason: "First login - device will be registered (DEVICE_APPROVAL_AUTO_REGISTER_FIRST_DEVICE)",
+        };
+      }
       return {
-        valid: true,
-        requiresApproval: false,
-        reason: "First login - device will be registered",
+        valid: false,
+        requiresApproval: true,
+        reason: "first_device_requires_approval",
       };
     }
 
@@ -115,11 +155,28 @@ export async function registerDevice(
 export async function requestDeviceApproval(
   userId: string,
   deviceInfo: DeviceInfo
-): Promise<DeviceApprovalRequest | null> {
+): Promise<RequestDeviceApprovalResult> {
   const supabase = getSupabaseClient();
 
   try {
-    const fingerprint = generateDeviceFingerprint(deviceInfo);
+    const { data: existingPending, error: existingErr } = await supabase
+      .from("device_approval_requests")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("new_device_id", deviceInfo.deviceId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingErr) {
+      console.error("Device approval request (existing lookup) error:", existingErr);
+      return { ok: false, error: formatDeviceApprovalDbError(existingErr) };
+    }
+
+    if (existingPending) {
+      return { ok: true, request: existingPending as DeviceApprovalRequest };
+    }
 
     const { data, error } = await supabase
       .from("device_approval_requests")
@@ -132,16 +189,19 @@ export async function requestDeviceApproval(
       .single();
 
     if (error || !data) {
-      throw error || new Error("Failed to create approval request");
+      console.error("Device approval request (insert) error:", error);
+      return {
+        ok: false,
+        error: formatDeviceApprovalDbError(error || new Error("insert failed")),
+      };
     }
 
-    // Log the request
     await logDeviceAction(userId, deviceInfo.deviceId, "approval_requested");
 
-    return data as DeviceApprovalRequest;
+    return { ok: true, request: data as DeviceApprovalRequest };
   } catch (error) {
     console.error("Device approval request error:", error);
-    return null;
+    return { ok: false, error: formatDeviceApprovalDbError(error) };
   }
 }
 
@@ -316,6 +376,65 @@ export async function cleanupExpiredRequests(): Promise<number> {
   }
 }
 
+/** Row for admin UIs: request + joined user (two-query merge, avoids PostgREST embed issues). */
+export type DeviceRequestWithUserRow = {
+  id: string;
+  user_id: string;
+  new_device_id: string;
+  status: string;
+  created_at: string;
+  users: {
+    id: string;
+    user_id: string;
+    name: string;
+    phone: string | null;
+    clinic_id: string | null;
+    email: string | null;
+  } | null;
+};
+
+export async function listDeviceRequestsWithUsers(
+  status: string,
+  limit: number,
+  clinicUserIds: string[] | null
+): Promise<DeviceRequestWithUserRow[]> {
+  const supabase = getSupabaseClient();
+
+  let q = supabase
+    .from("device_approval_requests")
+    .select("id, user_id, new_device_id, status, created_at")
+    .eq("status", status)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (clinicUserIds !== null) {
+    if (clinicUserIds.length === 0) return [];
+    q = q.in("user_id", clinicUserIds);
+  }
+
+  const { data: requests, error } = await q;
+  if (error) {
+    throw new Error(`Failed to fetch device requests: ${error.message}`);
+  }
+  if (!requests?.length) return [];
+
+  const userIds = [...new Set(requests.map((r) => r.user_id))];
+  const { data: userRows, error: uerr } = await supabase
+    .from("users")
+    .select("id, user_id, name, phone, clinic_id, email")
+    .in("id", userIds);
+
+  if (uerr) {
+    throw new Error(`Failed to load users for device requests: ${uerr.message}`);
+  }
+
+  const byId = new Map((userRows || []).map((u) => [u.id, u]));
+  return requests.map((r) => ({
+    ...r,
+    users: byId.get(r.user_id) ?? null,
+  }));
+}
+
 /**
  * Get pending device approval requests for a clinic
  */
@@ -398,6 +517,7 @@ const DeviceApprovalService = {
   resetDevice,
   cleanupExpiredRequests,
   getPendingApprovals,
+  listDeviceRequestsWithUsers,
   isDeviceApproved,
 };
 

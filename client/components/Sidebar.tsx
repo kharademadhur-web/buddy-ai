@@ -3,6 +3,7 @@ import {
   Menu,
   LayoutDashboard,
   Users,
+  User,
   FileText,
   BarChart3,
   Settings,
@@ -26,7 +27,18 @@ interface SidebarProps {
   queueCount?: number;
 }
 
-/** Hash routes like /doctor-dashboard#queue — match pathname + hash for active styling */
+/** Nested routes under /doctor-dashboard and /reception-dashboard */
+function portalStaffNavActive(itemPath: string, pathname: string): boolean {
+  const p = pathname.replace(/\/$/, "") || "/";
+  const item = itemPath.replace(/\/$/, "");
+  const homePaths = ["/doctor-dashboard", "/reception-dashboard"];
+  if (homePaths.includes(item)) {
+    return p === item;
+  }
+  return p === item;
+}
+
+/** Hash routes like /solo-dashboard#settings — match pathname + hash for active styling */
 function portalNavActive(itemPath: string, pathname: string, hash: string): boolean {
   if (!itemPath.includes("#")) {
     return pathname === itemPath && !(hash || "").replace(/^#/, "");
@@ -67,19 +79,23 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
   const menuItems = {
     doctor: [
       { icon: LayoutDashboard, label: "Dashboard", path: "/doctor-dashboard" },
-      { icon: Users, label: "Queue", path: "/doctor-dashboard#queue" },
-      { icon: FileText, label: "Prescriptions", path: "/doctor-dashboard#rx" },
-      { icon: BarChart3, label: "Analytics", path: "/doctor-dashboard#analytics" },
-      { icon: Settings, label: "Settings", path: "/doctor-dashboard#settings" },
+      { icon: Users, label: "Queue", path: "/doctor-dashboard/queue" },
+      { icon: FileText, label: "Reports", path: "/doctor-dashboard/reports" },
+      { icon: FileText, label: "Prescriptions", path: "/doctor-dashboard/prescriptions" },
+      { icon: BarChart3, label: "Analytics", path: "/doctor-dashboard/analytics" },
+      { icon: User, label: "Profile", path: "/profile/basic" },
+      { icon: Settings, label: "Settings", path: "/doctor-dashboard/settings" },
     ],
     reception: [
       { icon: LayoutDashboard, label: "Dashboard", path: "/reception-dashboard" },
-      { icon: Users, label: "Queue", path: "/reception-dashboard#queue" },
-      { icon: FileText, label: "Prescriptions", path: "/reception-dashboard#rx" },
-      { icon: Settings, label: "Settings", path: "/reception-dashboard#settings" },
+      { icon: Users, label: "Queue", path: "/reception-dashboard/queue" },
+      { icon: FileText, label: "Prescriptions", path: "/reception-dashboard/intake" },
+      { icon: User, label: "Profile", path: "/profile/basic" },
+      { icon: Settings, label: "Settings", path: "/reception-dashboard/settings" },
     ],
     "solo-doctor": [
       { icon: LayoutDashboard, label: "Dashboard", path: "/solo-dashboard" },
+      { icon: User, label: "Profile", path: "/profile/basic" },
       { icon: Settings, label: "Settings", path: "/solo-dashboard#settings" },
     ],
   };
@@ -94,6 +110,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
         { icon: CreditCard, label: "Billing", path: "/admin-dashboard/billing" },
         { icon: Users, label: "Users", path: "/admin-dashboard/users" },
         { icon: Settings, label: "Device Approvals", path: "/admin-dashboard/device-approvals" },
+        { icon: User, label: "Profile", path: "/profile/basic" },
         { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
       ];
     }
@@ -114,6 +131,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
         ],
       },
       { icon: Users, label: "Users", path: "/admin-dashboard/users" },
+      { icon: User, label: "Profile", path: "/profile/basic" },
       { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
     ];
   }, [adminAuth.user?.role]);
@@ -128,7 +146,10 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
 
   const navItemActive = (itemPath: string) => {
     if (role === "admin") return location.pathname === itemPath;
-    if (role === "doctor" || role === "reception" || role === "solo-doctor") {
+    if (role === "doctor" || role === "reception") {
+      return portalStaffNavActive(itemPath, location.pathname);
+    }
+    if (role === "solo-doctor") {
       return portalNavActive(itemPath, location.pathname, location.hash);
     }
     return location.pathname === itemPath;

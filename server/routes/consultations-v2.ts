@@ -10,6 +10,12 @@ import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
+function isMissingConsultationAiColumnError(message: string): boolean {
+  return /Could not find the '(ai_summary|ai_transcript|recording_consent)' column of 'consultations'|column .* does not exist/i.test(
+    message
+  );
+}
+
 const completeSchema = z.object({
   clinicId: z.string().uuid(),
   appointmentId: z.string().uuid(),
@@ -110,27 +116,52 @@ router.post(
         : null;
 
     // Create consultation
-    const consultationRes = await supabase
+    const consultationInsert: Record<string, unknown> = {
+      clinic_id: parsed.data.clinicId,
+      appointment_id: parsed.data.appointmentId,
+      patient_id: parsed.data.patientId,
+      doctor_user_id: req.user?.userId,
+      diagnosis: parsed.data.diagnosis ?? null,
+      treatment_plan: parsed.data.treatmentPlan ?? null,
+      notes: parsed.data.notes ?? null,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      workflow_status: "submitted_awaiting_payment",
+      structured_prescription: structuredPrescription,
+      handwriting_strokes: parsed.data.handwritingStrokes ?? null,
+    };
+
+    const aiTranscript = parsed.data.aiTranscript?.trim();
+    const aiSummary = parsed.data.aiSummary?.trim();
+    if (aiTranscript) consultationInsert.ai_transcript = aiTranscript;
+    if (aiSummary) consultationInsert.ai_summary = aiSummary;
+    if (parsed.data.recordingConsent === true) {
+      consultationInsert.recording_consent = true;
+    }
+
+    let consultationRes = await supabase
       .from("consultations")
-      .insert({
-        clinic_id: parsed.data.clinicId,
-        appointment_id: parsed.data.appointmentId,
-        patient_id: parsed.data.patientId,
-        doctor_user_id: req.user?.userId,
-        diagnosis: parsed.data.diagnosis ?? null,
-        treatment_plan: parsed.data.treatmentPlan ?? null,
-        notes: parsed.data.notes ?? null,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        workflow_status: "submitted_awaiting_payment",
-        structured_prescription: structuredPrescription,
-        handwriting_strokes: parsed.data.handwritingStrokes ?? null,
-        ai_transcript: parsed.data.aiTranscript ?? null,
-        ai_summary: parsed.data.aiSummary ?? null,
-        recording_consent: parsed.data.recordingConsent ?? false,
-      })
+      .insert(consultationInsert)
       .select("*")
       .single();
+
+    if (
+      consultationRes.error &&
+      isMissingConsultationAiColumnError(consultationRes.error.message)
+    ) {
+      console.warn(
+        "[consultations] AI columns missing in schema; retrying without AI fields:",
+        consultationRes.error.message
+      );
+      delete consultationInsert.ai_transcript;
+      delete consultationInsert.ai_summary;
+      delete consultationInsert.recording_consent;
+      consultationRes = await supabase
+        .from("consultations")
+        .insert(consultationInsert)
+        .select("*")
+        .single();
+    }
 
     if (consultationRes.error || !consultationRes.data) {
       return sendJsonError(res, 500, consultationRes.error?.message || "Failed to create consultation", "INTERNAL_SERVER_ERROR");

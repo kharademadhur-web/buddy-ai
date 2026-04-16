@@ -99,12 +99,14 @@ router.post(
     if (isXaiConfigured()) {
       try {
         const g = await grokConsultationSummary(text);
+        const englishPhrase = [g.chiefComplaint, g.plan].filter(Boolean).join(" — ").slice(0, 400);
         return res.json({
           success: true,
           summary: {
             chiefComplaint: g.chiefComplaint,
             history: g.history,
             plan: g.plan,
+            englishPhrase,
             disclaimer: "Draft for clinician review only — Grok/xAI; not a diagnosis.",
             provider: "xai",
           },
@@ -118,12 +120,14 @@ router.post(
     const chief = sentences[0] ?? text.slice(0, 200);
     const plan = sentences.slice(1, 3).join(". ") || "Review findings and adjust plan clinically.";
 
+    const englishPhrase = [chief, plan].filter(Boolean).join(" — ").slice(0, 400);
     return res.json({
       success: true,
       summary: {
         chiefComplaint: chief,
         history: text.slice(0, 800),
         plan,
+        englishPhrase,
         disclaimer: "Draft for clinician review only — not a medical diagnosis.",
         provider: "stub",
       },

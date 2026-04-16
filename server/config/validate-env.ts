@@ -129,6 +129,12 @@ export function validateEnvironmentVariables(): void {
   }
 
   console.log("✅ Environment variables validated successfully");
+
+  if (!process.env.SUPABASE_SERVICE_KEY?.trim()) {
+    console.warn(
+      "⚠️  SUPABASE_SERVICE_KEY is not set. The server will use the anon key; Row Level Security will block inserts/updates that the service role is meant to perform (e.g. device_approval_requests). Set SUPABASE_SERVICE_KEY to the Supabase service_role secret in production."
+    );
+  }
 }
 
 /**

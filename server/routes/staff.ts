@@ -57,7 +57,9 @@ router.get(
       return q;
     };
 
-    let q = buildQuery("id, user_id, name, role, clinic_id, last_portal_heartbeat_at");
+    let q = buildQuery(
+      "id, user_id, name, role, clinic_id, last_portal_heartbeat_at, portal_accepting_patients"
+    );
 
     if (req.user?.role === "receptionist") {
       const assigned = await fetchAssignedDoctorIds(req.user);
@@ -69,14 +71,22 @@ router.get(
 
     let { data, error } = await q;
 
-    // Migration 019 not applied yet — column missing
-    if (error && /last_portal|column|does not exist|schema cache/i.test(error.message)) {
-      q = buildQuery("id, user_id, name, role, clinic_id");
+    // Migration 019 / 021 not applied yet — column missing
+    if (error && /last_portal|portal_accepting|column|does not exist|schema cache/i.test(error.message)) {
+      q = buildQuery("id, user_id, name, role, clinic_id, last_portal_heartbeat_at");
       if (req.user?.role === "receptionist") {
         const assigned = await fetchAssignedDoctorIds(req.user);
         if (assigned.length > 0) q = q.in("id", assigned);
       }
-      const r2 = await q;
+      let r2 = await q;
+      if (r2.error && /last_portal|column|does not exist|schema cache/i.test(r2.error.message)) {
+        q = buildQuery("id, user_id, name, role, clinic_id");
+        if (req.user?.role === "receptionist") {
+          const assigned = await fetchAssignedDoctorIds(req.user);
+          if (assigned.length > 0) q = q.in("id", assigned);
+        }
+        r2 = await q;
+      }
       data = r2.data;
       error = r2.error;
     }
@@ -87,13 +97,16 @@ router.get(
       const row = d as Record<string, unknown>;
       const raw = row.last_portal_heartbeat_at;
       const ts = raw ? new Date(String(raw)).getTime() : NaN;
-      const online = Number.isFinite(ts) && now - ts < PRESENCE_ONLINE_MS;
+      const accepting = row.portal_accepting_patients !== false;
+      const heartbeatOk = Number.isFinite(ts) && now - ts < PRESENCE_ONLINE_MS;
+      const online = accepting && heartbeatOk;
       return {
         id: row.id,
         user_id: row.user_id,
         name: row.name,
         role: row.role,
         clinic_id: row.clinic_id,
+        accepting_patients: accepting,
         online,
       };
     });
@@ -127,6 +140,72 @@ router.post(
       .eq("id", req.user.userId);
     if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     res.json({ success: true, at: now });
+  })
+);
+
+/**
+ * GET /api/staff/me/portal-availability
+ * Doctor / independent — current "accepting patients" flag for UI toggle.
+ */
+router.get(
+  "/me/portal-availability",
+  authMiddleware,
+  requireRole("doctor", "independent"),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) return sendJsonError(res, 401, "Unauthorized", "UNAUTHORIZED");
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("users")
+      .select("portal_accepting_patients")
+      .eq("id", req.user.userId)
+      .single();
+    if (error) {
+      if (/portal_accepting|column|does not exist|schema cache/i.test(error.message)) {
+        return res.json({ success: true, acceptingPatients: true });
+      }
+      return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    }
+    const accepting = (data as { portal_accepting_patients?: boolean } | null)?.portal_accepting_patients !== false;
+    return res.json({ success: true, acceptingPatients: accepting });
+  })
+);
+
+/**
+ * PATCH /api/staff/me/portal-availability
+ * Body: { "acceptingPatients": boolean } — reception doctor list uses this + heartbeat.
+ */
+router.patch(
+  "/me/portal-availability",
+  authMiddleware,
+  requireRole("doctor", "independent"),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) return sendJsonError(res, 401, "Unauthorized", "UNAUTHORIZED");
+    const next = (req.body as { acceptingPatients?: unknown })?.acceptingPatients;
+    if (typeof next !== "boolean") {
+      return sendJsonError(res, 400, "acceptingPatients boolean required", "VALIDATION_ERROR");
+    }
+    const supabase = getSupabaseClient();
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("users")
+      .update({
+        portal_accepting_patients: next,
+        updated_at: now,
+        ...(next ? { last_portal_heartbeat_at: now } : {}),
+      })
+      .eq("id", req.user.userId);
+    if (error) {
+      if (/portal_accepting|column|does not exist|schema cache/i.test(error.message)) {
+        return sendJsonError(
+          res,
+          503,
+          "Database migration required: portal_accepting_patients on users",
+          "MIGRATION_REQUIRED"
+        );
+      }
+      return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    }
+    return res.json({ success: true, acceptingPatients: next });
   })
 );
 

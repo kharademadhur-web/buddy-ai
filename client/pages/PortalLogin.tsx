@@ -85,6 +85,7 @@ export default function PortalLogin() {
                   id="user_id"
                   name="user_id"
                   type="text"
+                  autoComplete="username"
                   placeholder="User ID"
                   value={formData.user_id}
                   onChange={handleChange}
@@ -99,6 +100,7 @@ export default function PortalLogin() {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Enter your password"
                   value={formData.password}
                   onChange={handleChange}

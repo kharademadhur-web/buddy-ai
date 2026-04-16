@@ -32,6 +32,11 @@ export function getSupabaseClient(): SupabaseClient {
         `[supabase] init keySource=${keySource} keyLen=${key.length} keyPrefix=${key.slice(0, 8)}`
       );
     }
+    if (!SUPABASE_SERVICE_KEY && process.env.NODE_ENV === "production") {
+      console.error(
+        "[supabase] CRITICAL: SUPABASE_SERVICE_KEY is missing in production. Device approvals and other privileged DB operations will fail under RLS. Add the service_role key from Supabase → Settings → API."
+      );
+    }
     serviceSupabaseClient = createClient(SUPABASE_URL, key, {
       auth: {
         autoRefreshToken: false,

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Square, Trash2, Eraser } from "lucide-react";
+import { Mic, Square, Trash2, Eraser, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import { toast } from "sonner";
 
 /** Serialized for POST /api/consultations/complete → handwritingStrokes */
 export type HandwritingStrokeBundle = {
@@ -14,13 +16,31 @@ interface PrescriptionCanvasProps {
   isRecording?: boolean;
   /** When user draws on the pad; omit or null = no handwriting payload. */
   onHandwritingChange?: (strokes: HandwritingStrokeBundle | null) => void;
+  /** Live + final voice output for saving on consultation complete */
+  onVoiceOutput?: (o: { transcript: string; englishPhrase: string }) => void;
+  /** Hide stylus pad by default — focus on patient + voice + meds */
+  showHandwriting?: boolean;
 }
+
+type SpeechRec = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((ev: Event) => void) | null;
+  onerror: ((ev: Event) => void) | null;
+  onend: (() => void) | null;
+};
 
 export default function PrescriptionCanvas({
   value,
   onChange,
-  isRecording = false,
+  isRecording: _legacyRecording,
   onHandwritingChange,
+  onVoiceOutput,
+  showHandwriting = false,
 }: PrescriptionCanvasProps) {
   const [recordingTime, setRecordingTime] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -29,6 +49,16 @@ export default function PrescriptionCanvas({
   const drawingRef = useRef<{ points: [number, number][] } | null>(null);
   const linesRef = useRef(lines);
   linesRef.current = lines;
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const finalTranscriptRef = useRef("");
+  const finalSegmentsRef = useRef<string[]>([]);
+  const recognitionRef = useRef<SpeechRec | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [englishPhrase, setEnglishPhrase] = useState("");
+  const [consent, setConsent] = useState(true);
 
   const redraw = useCallback(
     (allLines: HandwritingStrokeBundle["lines"], active: { points: [number, number][] } | null) => {
@@ -98,19 +128,137 @@ export default function PrescriptionCanvas({
     return [e.clientX - r.left, e.clientY - r.top];
   };
 
-  const handleStartRecording = () => {
-    setRecordingTime(0);
-    const mockTranscription = `Patient presents with symptoms of cough, fever, and body aches. 
-Physical examination reveals: temperature 101°F, mild congestion. 
-Diagnosis: Upper respiratory tract infection. 
-Recommended treatment: Rest, fluids, and prescribed medications. 
-Follow-up in 3 days if symptoms persist.`;
+  const pushVoiceToParent = useCallback(
+    (transcript: string, phrase: string) => {
+      onVoiceOutput?.({ transcript: transcript.trim(), englishPhrase: phrase.trim() });
+    },
+    [onVoiceOutput]
+  );
 
-    setTimeout(() => {
-      onChange(value + (value ? "\n\n" : "") + mockTranscription);
+  const stopRecognition = useCallback(() => {
+    const rec = recognitionRef.current;
+    if (rec) {
+      try {
+        rec.stop();
+      } catch {
+        try {
+          rec.abort();
+        } catch {
+          /* ignore */
+        }
+      }
+      recognitionRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingTime(0);
+  }, []);
+
+  const finalizeWithSummary = useCallback(async () => {
+    const text = liveTranscript.trim() || finalTranscriptRef.current.trim();
+    stopRecognition();
+    if (!text) {
+      setEnglishPhrase("");
+      pushVoiceToParent("", "");
+      return;
+    }
+    if (!consent) {
+      toast.error("Enable recording consent to generate an English summary.");
+      pushVoiceToParent(text, "");
+      return;
+    }
+    setSummarizing(true);
+    try {
+      const res = await apiFetch("/api/ai/consultation-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: text, recordingConsent: true as const }),
+      });
+      const j = (await res.json()) as {
+        success?: boolean;
+        summary?: { englishPhrase?: string; chiefComplaint?: string; plan?: string };
+      };
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Summary failed");
+      const phrase =
+        j.summary?.englishPhrase ||
+        [j.summary?.chiefComplaint, j.summary?.plan].filter(Boolean).join(" — ").slice(0, 400) ||
+        "";
+      setEnglishPhrase(phrase);
+      pushVoiceToParent(text, phrase);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not summarize");
+      pushVoiceToParent(text, "");
+    } finally {
+      setSummarizing(false);
+    }
+  }, [consent, liveTranscript, pushVoiceToParent, stopRecognition]);
+
+  const startRecording = useCallback(() => {
+    const win = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : undefined;
+    const SR = (win?.SpeechRecognition || win?.webkitSpeechRecognition) as
+      | (new () => SpeechRec)
+      | undefined;
+    if (!SR) {
+      toast.error("Voice input is not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+    finalTranscriptRef.current = "";
+    finalSegmentsRef.current = [];
+    setLiveTranscript("");
+    setEnglishPhrase("");
+
+    const rec = new SR();
+    rec.lang = "en-IN";
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    rec.onresult = (ev: Event) => {
+      const e = ev as unknown as {
+        resultIndex: number;
+        results: Array<{ 0: { transcript: string }; isFinal: boolean }>;
+      };
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript.trim();
+        if (e.results[i].isFinal) {
+          finalSegmentsRef.current[i] = t;
+        } else {
+          interim += (interim ? " " : "") + t;
+        }
+      }
+      finalTranscriptRef.current = finalSegmentsRef.current.filter(Boolean).join(" ").trim();
+      const full = [finalTranscriptRef.current, interim.trim()].filter(Boolean).join(" ").trim();
+      setLiveTranscript(full);
+    };
+
+    rec.onerror = () => {
+      toast.error("Voice recognition error — try again.");
+    };
+
+    rec.onend = () => {
+      if (recognitionRef.current === rec) {
+        recognitionRef.current = null;
+        setIsRecording(false);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      }
+    };
+
+    try {
+      rec.start();
+      recognitionRef.current = rec;
+      setIsRecording(true);
       setRecordingTime(0);
-    }, 2000);
-  };
+      timerRef.current = setInterval(() => setRecordingTime((s) => s + 1), 1000);
+    } catch {
+      toast.error("Could not start microphone.");
+    }
+  }, []);
 
   const clearHandwriting = () => {
     drawingRef.current = null;
@@ -119,20 +267,111 @@ Follow-up in 3 days if symptoms persist.`;
     redraw([], null);
   };
 
+  useEffect(() => {
+    return () => {
+      stopRecognition();
+    };
+  }, [stopRecognition]);
+
   return (
     <div className="space-y-4">
-      {/* Structured notes — always work without handwriting */}
-      <div className="bg-white rounded-xl border-2 border-gray-300 overflow-hidden">
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Write clinical notes here... or use voice recording below"
-          className="w-full h-64 p-6 font-mono text-sm focus:outline-none resize-none"
-        />
+      <div>
+        <label className="block text-sm font-semibold text-gray-800 mb-1">
+          Brief clinical notes <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Short findings, differentials, or reminders — voice captures the live conversation below."
+            className="w-full h-36 p-4 font-sans text-sm focus:outline-none resize-none"
+          />
+        </div>
       </div>
 
-      {/* Optional handwriting pad — strokes sent to API when completing */}
-      {onHandwritingChange ? (
+      <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <input
+            id="consent-voice"
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-1"
+          />
+          <label htmlFor="consent-voice" className="text-xs text-gray-700 leading-snug">
+            I consent to capture this visit conversation for the clinical record and English summary. Required for
+            summary generation.
+          </label>
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold text-gray-900 mb-1">Conversation (voice)</p>
+          <p className="text-xs text-gray-600 mb-2">
+            Starting a new recording clears the previous conversation for this patient. Speak clearly; text appears
+            live. Stop when finished to generate a short English line below.
+          </p>
+          <div className="min-h-[100px] max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
+            {liveTranscript || (
+              <span className="text-gray-400">Conversation transcript will appear here…</span>
+            )}
+          </div>
+        </div>
+
+        {englishPhrase ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2">
+            <p className="text-xs font-semibold text-emerald-900 uppercase tracking-wide">English summary</p>
+            <p className="text-sm text-emerald-950 mt-1">{englishPhrase}</p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (isRecording) return;
+              finalTranscriptRef.current = "";
+              finalSegmentsRef.current = [];
+              setLiveTranscript("");
+              setEnglishPhrase("");
+              startRecording();
+            }}
+            disabled={isRecording || summarizing}
+            className={cn(
+              "flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all",
+              "bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
+            )}
+          >
+            <Mic className="w-5 h-5" />
+            Start recording
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void finalizeWithSummary()}
+            disabled={summarizing || (!liveTranscript.trim() && !isRecording)}
+            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            {summarizing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Summarizing…
+              </>
+            ) : (
+              <>
+                <Square className="w-5 h-5" />
+                Stop &amp; summarize
+              </>
+            )}
+          </button>
+        </div>
+        {isRecording ? (
+          <p className="text-xs font-medium text-violet-800">
+            Microphone on · {recordingTime}s elapsed — speak naturally, then press Stop &amp; summarize.
+          </p>
+        ) : null}
+      </div>
+
+      {showHandwriting && onHandwritingChange ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold text-gray-800">Handwriting pad (optional)</p>
@@ -196,51 +435,21 @@ Follow-up in 3 days if symptoms persist.`;
             />
           </div>
           <p className="text-xs text-gray-500">
-            Draw Rx here if you use a stylus; structured notes and medicine table above still save the
-            visit if you skip drawing.
+            Draw Rx here if you use a stylus; notes and medicines still save the visit if you skip drawing.
           </p>
         </div>
       ) : null}
 
-      {/* Controls */}
       <div className="flex gap-3">
         <button
           type="button"
-          onClick={handleStartRecording}
-          disabled={isRecording}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all",
-            isRecording
-              ? "bg-red-600 text-white animate-pulse"
-              : "bg-purple-600 hover:bg-purple-700 text-white"
-          )}
-        >
-          {isRecording ? (
-            <>
-              <Square className="w-5 h-5 animate-bounce" />
-              Recording ({recordingTime}s)
-            </>
-          ) : (
-            <>
-              <Mic className="w-5 h-5" />
-              Start Voice Recording
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
           onClick={() => onChange("")}
-          className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors flex items-center gap-2"
+          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold text-sm flex items-center gap-2"
         >
-          <Trash2 className="w-5 h-5" />
-          Clear
+          <Trash2 className="w-4 h-4" />
+          Clear notes
         </button>
       </div>
-
-      <p className="text-xs text-gray-500">
-        Tip: Structured notes and medicines are enough to complete a visit; handwriting is optional.
-      </p>
     </div>
   );
 }

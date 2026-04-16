@@ -14,6 +14,7 @@ type SearchRow = {
   dosage: string;
   frequency: string;
   duration: string;
+  source?: string;
 };
 
 /** Last-resort when API unreachable */
@@ -159,7 +160,7 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Type to search formulary (e.g. Para, Amox)…"
+                placeholder="Search medicines (RxNorm + clinic list; optional Google when server is configured)…"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 autoComplete="off"
               />
@@ -180,6 +181,9 @@ export default function MedicineTable({ medicines, onChange, editable = true }: 
                       <span className="text-gray-600">{row.dosage}</span>
                       <span className="text-gray-500 text-xs block">
                         {row.frequency} · {row.duration}
+                        {row.source ? (
+                          <span className="ml-1 text-[10px] uppercase text-gray-400">({row.source})</span>
+                        ) : null}
                       </span>
                     </button>
                   </li>

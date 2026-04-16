@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useAdminAuth } from "@/context/AdminAuthContext";
 import { ChangePasswordModal } from "../components/ChangePasswordModal";
 import { Button } from "../components/ui/button";
 import { useToast } from "../hooks/use-toast";
@@ -9,13 +10,35 @@ import { useToast } from "../hooks/use-toast";
  * Shows user info, security settings, and login history
  */
 export function Profile() {
-  const { user } = useAuth();
+  const { user } = useAdminAuth();
+  const { section } = useParams<{ section?: string }>();
+  const navigate = useNavigate();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"basic" | "security" | "activity">("basic");
+  const validSections = useMemo(() => ["basic", "security", "activity"] as const, []);
+  const safeSection = useMemo(() => {
+    const candidate = (section || "basic").toLowerCase();
+    return validSections.includes(candidate as (typeof validSections)[number]) ? candidate : "basic";
+  }, [section, validSections]);
+  const activeTab = useMemo<"basic" | "security" | "activity">(() => {
+    if (safeSection === "security") return "security";
+    if (safeSection === "activity") return "activity";
+    return "basic";
+  }, [safeSection]);
+  const sectionTitle = useMemo(() => {
+    if (activeTab === "security") return "Security";
+    if (activeTab === "activity") return "Activity";
+    return "Basic";
+  }, [activeTab]);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [sessions, setSessions] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (section && section.toLowerCase() !== safeSection) {
+      navigate(`/profile/${safeSection}`, { replace: true });
+    }
+  }, [section, safeSection, navigate]);
 
   useEffect(() => {
     if (activeTab === "security") {
@@ -26,9 +49,10 @@ export function Profile() {
   }, [activeTab]);
 
   const fetchSessions = async () => {
+    if (!user?.id) return;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/users/${user?.id}/sessions`);
+      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions`);
       if (response.ok) {
         const data = await response.json();
         setSessions(data.data || []);
@@ -45,9 +69,10 @@ export function Profile() {
   };
 
   const fetchAuditLogs = async () => {
+    if (!user?.id) return;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/users/${user?.id}/audit-logs`);
+      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/audit-logs`);
       if (response.ok) {
         const data = await response.json();
         setAuditLogs(data.data || []);
@@ -64,8 +89,9 @@ export function Profile() {
   };
 
   const handleLogoutDevice = async (deviceId: string) => {
+    if (!user?.id) return;
     try {
-      const response = await fetch(`/api/users/${user?.id}/sessions/logout`, {
+      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceId }),
@@ -85,8 +111,9 @@ export function Profile() {
   };
 
   const handleLogoutAllDevices = async () => {
+    if (!user?.id) return;
     try {
-      const response = await fetch(`/api/users/${user?.id}/sessions/logout-all`, {
+      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions/logout-all`, {
         method: "POST",
       });
 
@@ -106,14 +133,17 @@ export function Profile() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Profile</h1>
+        <div className="mb-8">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Profile / {sectionTitle}</p>
+          <h1 className="text-3xl font-bold text-gray-900 mt-1">Profile</h1>
+        </div>
 
         {/* Tabs */}
         <div className="flex gap-0 mb-6 border-b border-gray-200">
-          {["basic", "security", "activity"].map((tab) => (
+          {validSections.map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab as any)}
+              onClick={() => navigate(`/profile/${tab}`)}
               className={`px-4 py-2 font-medium border-b-2 -mb-px ${
                 activeTab === tab
                   ? "border-blue-600 text-blue-600"
@@ -136,7 +166,7 @@ export function Profile() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-600">Contact</label>
-                <p className="text-lg text-gray-900">{user?.contact || "N/A"}</p>
+                <p className="text-lg text-gray-900">{user?.phone || user?.email || "N/A"}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-600">Role</label>
