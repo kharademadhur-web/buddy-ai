@@ -21,6 +21,7 @@ export default function DoctorQueuePage() {
     selectedAppt,
     prescriptionNotes,
     setPrescriptionNotes,
+    setHandwritingStrokes,
     medicines,
     setMedicines,
     completing,
@@ -100,6 +101,17 @@ export default function DoctorQueuePage() {
                 </div>
               ) : null}
 
+              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/30 p-4 sm:p-6 shadow-sm">
+                <h4 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-amber-700" />
+                  Prescription (medicines)
+                </h4>
+                <p className="text-xs text-gray-600 mb-4">
+                  Add drugs here first; search NIH RxNorm + clinic list. Optional Google Custom Search when configured on the server.
+                </p>
+                <MedicineTable medicines={medicines} onChange={setMedicines} editable={true} />
+              </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
                 <h3 className="text-base font-bold text-gray-900 mb-1">Visit documentation</h3>
                 <p className="text-xs text-gray-500 mb-4">Brief notes, voice conversation, and English summary — handwriting is optional.</p>
@@ -108,20 +120,10 @@ export default function DoctorQueuePage() {
                   value={prescriptionNotes}
                   onChange={setPrescriptionNotes}
                   isRecording={false}
-                  showHandwriting={false}
+                  showHandwriting={true}
+                  onHandwritingChange={setHandwritingStrokes}
                   onVoiceOutput={setVoiceSession}
                 />
-              </div>
-
-              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/30 p-4 sm:p-6 shadow-sm">
-                <h4 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-amber-700" />
-                  Medicines
-                </h4>
-                <p className="text-xs text-gray-600 mb-4">
-                  Search NIH RxNorm + clinic list; optional Google Custom Search when configured on the server.
-                </p>
-                <MedicineTable medicines={medicines} onChange={setMedicines} editable={true} />
               </div>
 
               <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 sm:p-6 shadow-sm">
@@ -138,7 +140,7 @@ export default function DoctorQueuePage() {
                 {voiceTranscript?.trim() ? (
                   <div className="mt-3 rounded-lg border border-gray-200 bg-white px-3 py-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Conversation transcript</p>
-                    <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap max-h-28 overflow-y-auto">
+                    <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap max-h-[min(40vh,320px)] overflow-y-auto">
                       {voiceTranscript}
                     </p>
                   </div>

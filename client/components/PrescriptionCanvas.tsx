@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Square, Trash2, Eraser, Loader2 } from "lucide-react";
+import { Mic, Square, Trash2, Eraser, Loader2, ScanText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import { handwritingStrokesToPngDataUrl } from "@/lib/handwriting-raster";
+import type { HandwritingTranscribeResponse } from "@shared/api";
+import type { HandwritingStrokeBundle } from "@shared/handwriting";
 import { toast } from "sonner";
 
-/** Serialized for POST /api/consultations/complete → handwritingStrokes */
-export type HandwritingStrokeBundle = {
-  version: 1;
-  lines: Array<{ points: [number, number][] }>;
-};
+export type { HandwritingStrokeBundle };
 
 interface PrescriptionCanvasProps {
   value: string;
@@ -53,12 +52,17 @@ export default function PrescriptionCanvas({
   const [isRecording, setIsRecording] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const finalTranscriptRef = useRef("");
-  const finalSegmentsRef = useRef<string[]>([]);
+  /** Text retained when the browser ends one recognition session and we start another (see recordingIntentRef). */
+  const carryOverRef = useRef("");
   const recognitionRef = useRef<SpeechRec | null>(null);
+  /** True while the user expects capture to continue — browsers often end a continuous session after ~60s or silence; we start a new session without clearing text. */
+  const recordingIntentRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [englishPhrase, setEnglishPhrase] = useState("");
   const [consent, setConsent] = useState(true);
+  const [padOcrLoading, setPadOcrLoading] = useState(false);
+  const [padOcrText, setPadOcrText] = useState("");
 
   const redraw = useCallback(
     (allLines: HandwritingStrokeBundle["lines"], active: { points: [number, number][] } | null) => {
@@ -136,6 +140,7 @@ export default function PrescriptionCanvas({
   );
 
   const stopRecognition = useCallback(() => {
+    recordingIntentRef.current = false;
     const rec = recognitionRef.current;
     if (rec) {
       try {
@@ -158,6 +163,7 @@ export default function PrescriptionCanvas({
   }, []);
 
   const finalizeWithSummary = useCallback(async () => {
+    recordingIntentRef.current = false;
     const text = liveTranscript.trim() || finalTranscriptRef.current.trim();
     stopRecognition();
     if (!text) {
@@ -196,19 +202,16 @@ export default function PrescriptionCanvas({
     }
   }, [consent, liveTranscript, pushVoiceToParent, stopRecognition]);
 
-  const startRecording = useCallback(() => {
+  const startRecognitionEngine = useCallback(() => {
     const win = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : undefined;
     const SR = (win?.SpeechRecognition || win?.webkitSpeechRecognition) as
       | (new () => SpeechRec)
       | undefined;
     if (!SR) {
       toast.error("Voice input is not supported in this browser. Try Chrome or Edge.");
+      recordingIntentRef.current = false;
       return;
     }
-    finalTranscriptRef.current = "";
-    finalSegmentsRef.current = [];
-    setLiveTranscript("");
-    setEnglishPhrase("");
 
     const rec = new SR();
     rec.lang = "en-IN";
@@ -217,20 +220,21 @@ export default function PrescriptionCanvas({
 
     rec.onresult = (ev: Event) => {
       const e = ev as unknown as {
-        resultIndex: number;
         results: Array<{ 0: { transcript: string }; isFinal: boolean }>;
       };
       let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript.trim();
-        if (e.results[i].isFinal) {
-          finalSegmentsRef.current[i] = t;
+      let finals = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i]![0].transcript;
+        if (e.results[i]!.isFinal) {
+          finals += t;
         } else {
-          interim += (interim ? " " : "") + t;
+          interim += t;
         }
       }
-      finalTranscriptRef.current = finalSegmentsRef.current.filter(Boolean).join(" ").trim();
-      const full = [finalTranscriptRef.current, interim.trim()].filter(Boolean).join(" ").trim();
+      const sessionMerged = `${finals} ${interim}`.replace(/\s+/g, " ").trim();
+      const full = [carryOverRef.current, sessionMerged].filter(Boolean).join(" ").trim();
+      finalTranscriptRef.current = full;
       setLiveTranscript(full);
     };
 
@@ -239,33 +243,87 @@ export default function PrescriptionCanvas({
     };
 
     rec.onend = () => {
-      if (recognitionRef.current === rec) {
-        recognitionRef.current = null;
-        setIsRecording(false);
+      if (recognitionRef.current !== rec) return;
+      recognitionRef.current = null;
+      if (!recordingIntentRef.current) {
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
+        setIsRecording(false);
+        setRecordingTime(0);
+        return;
       }
+      carryOverRef.current = finalTranscriptRef.current.trim();
+      queueMicrotask(() => {
+        if (!recordingIntentRef.current) return;
+        startRecognitionEngine();
+      });
     };
 
     try {
       rec.start();
       recognitionRef.current = rec;
       setIsRecording(true);
-      setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime((s) => s + 1), 1000);
+      if (!timerRef.current) {
+        setRecordingTime(0);
+        timerRef.current = setInterval(() => setRecordingTime((s) => s + 1), 1000);
+      }
     } catch {
       toast.error("Could not start microphone.");
+      recordingIntentRef.current = false;
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
   }, []);
+
+  const startRecording = useCallback(() => {
+    recordingIntentRef.current = true;
+    carryOverRef.current = "";
+    finalTranscriptRef.current = "";
+    setLiveTranscript("");
+    setEnglishPhrase("");
+    startRecognitionEngine();
+  }, [startRecognitionEngine]);
 
   const clearHandwriting = () => {
     drawingRef.current = null;
     setLines([]);
+    setPadOcrText("");
     emitHandwriting([]);
     redraw([], null);
   };
+
+  const convertPadToText = useCallback(async () => {
+    if (lines.length === 0) {
+      toast.error("Draw on the pad first, then convert.");
+      return;
+    }
+    const dataUrl = handwritingStrokesToPngDataUrl({ version: 1, lines });
+    if (!dataUrl) {
+      toast.error("Could not render handwriting.");
+      return;
+    }
+    setPadOcrLoading(true);
+    try {
+      const res = await apiFetch("/api/ai/handwriting-transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: dataUrl }),
+      });
+      const j = (await res.json()) as HandwritingTranscribeResponse & { error?: string };
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Transcription failed");
+      setPadOcrText(j.text?.trim() ?? "");
+      toast.success("Pad transcribed — review and insert into notes if correct.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Transcription failed");
+    } finally {
+      setPadOcrLoading(false);
+    }
+  }, [lines]);
 
   useEffect(() => {
     return () => {
@@ -310,7 +368,7 @@ export default function PrescriptionCanvas({
             Starting a new recording clears the previous conversation for this patient. Speak clearly; text appears
             live. Stop when finished to generate a short English line below.
           </p>
-          <div className="min-h-[100px] max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
+          <div className="min-h-[200px] max-h-[min(55vh,560px)] overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
             {liveTranscript || (
               <span className="text-gray-400">Conversation transcript will appear here…</span>
             )}
@@ -329,8 +387,8 @@ export default function PrescriptionCanvas({
             type="button"
             onClick={() => {
               if (isRecording) return;
+              carryOverRef.current = "";
               finalTranscriptRef.current = "";
-              finalSegmentsRef.current = [];
               setLiveTranscript("");
               setEnglishPhrase("");
               startRecording();
@@ -434,8 +492,49 @@ export default function PrescriptionCanvas({
               }}
             />
           </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => void convertPadToText()}
+              disabled={padOcrLoading || lines.length === 0}
+              className={cn(
+                "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors",
+                "bg-white border-violet-300 text-violet-900 hover:bg-violet-50 disabled:opacity-50"
+              )}
+            >
+              {padOcrLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ScanText className="w-4 h-4" />
+              )}
+              Convert pad to text
+            </button>
+            <span className="text-xs text-gray-500">
+              Server-side vision (set <code className="text-[11px] bg-white px-1 rounded">OPENAI_API_KEY</code> or xAI
+              vision).
+            </span>
+          </div>
+          {padOcrText ? (
+            <div className="rounded-lg border border-violet-200 bg-white p-3 space-y-2">
+              <p className="text-xs font-semibold text-violet-900 uppercase tracking-wide">Transcribed text</p>
+              <p className="text-sm text-gray-900 whitespace-pre-wrap">{padOcrText}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  const t = padOcrText.trim();
+                  if (!t) return;
+                  onChange(value.trim() ? `${value.trim()}\n\n${t}` : t);
+                  toast.success("Inserted into clinical notes.");
+                }}
+                className="text-sm font-semibold text-violet-700 hover:text-violet-900"
+              >
+                Insert into notes above
+              </button>
+            </div>
+          ) : null}
           <p className="text-xs text-gray-500">
-            Draw Rx here if you use a stylus; notes and medicines still save the visit if you skip drawing.
+            Draw Rx here if you use a stylus; use Convert to turn handwriting into editable text. Notes and medicines
+            still save if you skip drawing.
           </p>
         </div>
       ) : null}

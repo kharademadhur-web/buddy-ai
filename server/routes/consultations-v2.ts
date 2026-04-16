@@ -11,7 +11,7 @@ import { sendJsonError } from "../lib/send-json-error";
 const router = Router();
 
 function isMissingConsultationOptionalColumnError(message: string): boolean {
-  return /Could not find the '(ai_summary|ai_transcript|recording_consent|handwriting_strokes|handwriting_image_path)' column of 'consultations'|column .* does not exist/i.test(
+  return /Could not find the '(ai_summary|ai_transcript|recording_consent|handwriting_strokes|handwriting_image_path|structured_prescription)' column of 'consultations'|column .* does not exist/i.test(
     message
   );
 }
@@ -157,6 +157,7 @@ router.post(
       delete consultationInsert.ai_transcript;
       delete consultationInsert.ai_summary;
       delete consultationInsert.recording_consent;
+      delete consultationInsert.structured_prescription;
       consultationRes = await supabase
         .from("consultations")
         .insert(consultationInsert)

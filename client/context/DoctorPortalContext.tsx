@@ -11,7 +11,7 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
 import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
-import type { HandwritingStrokeBundle } from "@/components/PrescriptionCanvas";
+import type { HandwritingStrokeBundle } from "@shared/handwriting";
 import type { QueueRow } from "@/components/QueueList";
 import type { Letterhead } from "@/context/ClinicContext";
 import { Medicine } from "@/context/ClinicContext";

@@ -116,6 +116,14 @@ export interface PrescriptionItemDTO {
   created_at: string;
 }
 
+/** POST /api/ai/handwriting-transcribe */
+export interface HandwritingTranscribeResponse {
+  success: boolean;
+  text: string;
+  provider: "openai" | "xai";
+  disclaimer: string;
+}
+
 export interface PrescriptionDTO {
   id: string;
   clinic_id: string;

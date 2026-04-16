@@ -93,3 +93,58 @@ Never diagnose definitively; this is draft documentation for a licensed clinicia
     };
   }
 }
+
+/**
+ * Vision: transcribe handwriting from a PNG data URL (data:image/png;base64,...).
+ * Uses XAI_VISION_MODEL or XAI_MODEL or grok-2-latest — requires a vision-capable endpoint.
+ */
+export async function grokHandwritingTranscribe(dataUrl: string): Promise<string> {
+  const key = (process.env.XAI_API_KEY || process.env.GROK_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("XAI_API_KEY or GROK_API_KEY is not configured");
+  }
+
+  const model = (process.env.XAI_VISION_MODEL || process.env.XAI_MODEL || "grok-2-latest").trim();
+
+  const res = await fetch(`${XAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      max_tokens: 1600,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You transcribe clinical handwriting from prescription pads. Output plain text only, no markdown. Preserve line breaks. For illegible segments write [illegible].",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Transcribe all visible handwriting in this image." },
+            { type: "image_url", image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const raw = (await res.json()) as {
+    error?: { message?: string };
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  if (!res.ok) {
+    throw new Error(raw.error?.message || `xAI HTTP ${res.status}`);
+  }
+
+  const text = raw.choices?.[0]?.message?.content?.trim();
+  if (!text) {
+    throw new Error("Empty transcription from Grok/xAI");
+  }
+  return text;
+}
