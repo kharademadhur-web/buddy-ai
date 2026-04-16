@@ -13,6 +13,7 @@ export default function DoctorQueuePage() {
     clinicId,
     loading,
     error,
+    refetch,
     rows,
     selectedAppointmentId,
     handleSelectPatient,
@@ -69,6 +70,11 @@ export default function DoctorQueuePage() {
             patient={activePatient}
             doctorName={user?.name}
             letterhead={clinicLetterhead}
+            clinicId={clinicId}
+            allowNameEdit={true}
+            onPatientNameUpdated={() => {
+              void refetch();
+            }}
           />
 
           {activePatient && selectedAppt && (

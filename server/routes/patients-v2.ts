@@ -33,6 +33,10 @@ const createSchema = z.object({
   otpSessionId: z.string().uuid().optional(),
 });
 
+const updateNameSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+
 router.post(
   "/",
   authMiddleware,
@@ -126,6 +130,45 @@ router.get(
     const { data, error } = await q.order("updated_at", { ascending: false }).limit(take);
     if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
     return res.json({ success: true, patients: data ?? [] });
+  }
+);
+
+/**
+ * PATCH /api/patients/:id
+ * Name-only update (doctor/reception/admin). Other fields stay unchanged.
+ */
+router.patch(
+  "/:id",
+  authMiddleware,
+  requireRole("doctor", "receptionist", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const parsed = updateNameSchema.safeParse(req.body);
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
+
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+    }
+
+    const supabase =
+      req.user?.role === "super-admin"
+        ? getSupabaseClient()
+        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+
+    const { data, error } = await supabase
+      .from("patients")
+      .update({
+        name: parsed.data.name.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("clinic_id", clinicId)
+      .eq("id", req.params.id)
+      .select("*")
+      .single();
+
+    if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to update patient", "INTERNAL_SERVER_ERROR");
+    return res.json({ success: true, patient: data });
   }
 );
 

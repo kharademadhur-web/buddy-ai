@@ -1,19 +1,37 @@
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Phone, Calendar, Stethoscope, User } from "lucide-react";
 import { Patient, Letterhead } from "@/context/ClinicContext";
 import { queueStatusLabel } from "@/lib/queue-display";
+import { apiErrorMessage, apiFetch } from "@/lib/api-base";
+import { toast } from "sonner";
 
 interface ActivePatientPanelProps {
   patient: Patient | null;
   doctorName?: string;
   letterhead?: Letterhead | null;
+  clinicId?: string | null;
+  allowNameEdit?: boolean;
+  onPatientNameUpdated?: () => void;
 }
 
 export default function ActivePatientPanel({
   patient,
   doctorName = "Doctor",
   letterhead,
+  clinicId,
+  allowNameEdit = false,
+  onPatientNameUpdated,
 }: ActivePatientPanelProps) {
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    setDraftName(patient?.name || "");
+    setEditingName(false);
+  }, [patient?.id, patient?.name]);
+
   if (!patient) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
@@ -27,6 +45,41 @@ export default function ActivePatientPanel({
 
   const hasLetterhead = Boolean(letterhead?.templateUrl);
   const isPdfLetterhead = String(letterhead?.mime || "").toLowerCase().includes("pdf");
+
+  const savePatientName = async () => {
+    const name = draftName.trim();
+    if (!name) {
+      toast.error("Patient name is required.");
+      return;
+    }
+    if (!clinicId) {
+      toast.error("Clinic is not assigned.");
+      return;
+    }
+    if (name === patient.name) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      const res = await apiFetch(`/api/patients/${encodeURIComponent(patient.id)}?clinicId=${encodeURIComponent(clinicId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(apiErrorMessage(j) || "Failed to update patient name");
+      }
+      toast.success("Patient name updated.");
+      setEditingName(false);
+      onPatientNameUpdated?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update patient name");
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -98,8 +151,54 @@ export default function ActivePatientPanel({
           <div>
             <div className="flex items-center gap-2 mb-1">
               <User className="w-4 h-4 text-blue-600" />
-              <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
+              {allowNameEdit && editingName ? (
+                <input
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  className="h-8 px-2 rounded border border-blue-300 text-base font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  maxLength={120}
+                  autoFocus
+                />
+              ) : (
+                <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
+              )}
             </div>
+            {allowNameEdit ? (
+              <div className="mb-2 flex items-center gap-2">
+                {editingName ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void savePatientName()}
+                      disabled={savingName}
+                      className="px-2.5 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {savingName ? "Saving..." : "Save name"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftName(patient.name);
+                        setEditingName(false);
+                      }}
+                      disabled={savingName}
+                      className="px-2.5 py-1 rounded border border-gray-300 text-gray-700 text-xs font-semibold hover:bg-gray-100 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    className="px-2.5 py-1 rounded border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
+                  >
+                    Edit patient name
+                  </button>
+                )}
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-4 mt-1 text-sm text-gray-600">
               <div className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
