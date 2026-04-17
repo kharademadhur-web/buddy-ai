@@ -12,7 +12,7 @@ import {
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useToast } from "../hooks/use-toast";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -49,7 +49,8 @@ export function ChangePasswordModal({
     setIsLoading(true);
     try {
       const response = await apiFetch("/api/auth/change-password", {
-        method: "PUT",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           oldPassword: data.oldPassword,
           newPassword: data.newPassword,
@@ -65,17 +66,17 @@ export function ChangePasswordModal({
         onClose();
         onSuccess?.();
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         toast({
           title: "Error",
-          description: error.error || "Failed to change password",
+          description: apiErrorMessage(error) || "Failed to change password",
           variant: "destructive",
         });
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "An error occurred while changing password",
+        description: errorMessageFromUnknown(error, "An error occurred while changing password"),
         variant: "destructive",
       });
     } finally {

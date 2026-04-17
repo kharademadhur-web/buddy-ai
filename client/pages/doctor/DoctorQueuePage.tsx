@@ -32,6 +32,132 @@ export default function DoctorQueuePage() {
     voiceEnglishPhrase,
   } = useDoctorPortal();
 
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const buildPrescriptionHtml = () => {
+    const patientName = activePatient?.name || "Patient";
+    const patientPhone = activePatient?.phone || "—";
+    const patientAge = activePatient?.age ? `${activePatient.age}` : "—";
+    const visitDate = new Date().toLocaleString();
+    const doctorName = user?.name || "Doctor";
+    const clinicName = clinicLetterhead?.clinicName || "Clinic";
+    const clinicAddress = clinicLetterhead?.clinicAddress || "";
+    const clinicPhone = clinicLetterhead?.clinicPhone || "";
+    const complaint = selectedAppt?.chief_complaint || "—";
+    const notes = prescriptionNotes || "—";
+    const summary = voiceEnglishPhrase?.trim() || "";
+    const meds = medicines || [];
+
+    const medsHtml = meds.length
+      ? meds
+          .map((m) => {
+            const details = [m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ");
+            return `<li><strong>${escapeHtml(m.name || "Medicine")}</strong>${details ? ` — ${escapeHtml(details)}` : ""}</li>`;
+          })
+          .join("")
+      : "<li>No medicines added.</li>";
+
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Prescription - ${escapeHtml(patientName)}</title>
+    <style>
+      @page { size: A4 portrait; margin: 12mm; }
+      body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
+      .sheet { width: 100%; max-width: 190mm; margin: 0 auto; }
+      .header { border-bottom: 2px solid #1f2937; padding-bottom: 10px; margin-bottom: 14px; }
+      .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .title { font-size: 22px; font-weight: 700; margin: 0; }
+      .muted { color: #4b5563; font-size: 12px; }
+      .section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-top: 10px; }
+      .section h3 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; color: #374151; letter-spacing: .02em; }
+      ul { margin: 6px 0 0 18px; padding: 0; }
+      li { margin: 4px 0; }
+      .preserve { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <div class="header">
+        <div class="row">
+          <div>
+            <p class="title">${escapeHtml(clinicName)}</p>
+            ${clinicAddress ? `<div class="muted">${escapeHtml(clinicAddress)}</div>` : ""}
+            ${clinicPhone ? `<div class="muted">Phone: ${escapeHtml(clinicPhone)}</div>` : ""}
+          </div>
+          <div style="text-align:right">
+            <div><strong>${escapeHtml(doctorName)}</strong></div>
+            <div class="muted">${escapeHtml(visitDate)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Patient</h3>
+        <div class="row">
+          <div><strong>Name:</strong> ${escapeHtml(patientName)}</div>
+          <div><strong>Age:</strong> ${escapeHtml(patientAge)}</div>
+          <div><strong>Phone:</strong> ${escapeHtml(patientPhone)}</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Chief Complaint</h3>
+        <div class="preserve">${escapeHtml(complaint)}</div>
+      </div>
+
+      <div class="section">
+        <h3>Prescription (Medicines)</h3>
+        <ul>${medsHtml}</ul>
+      </div>
+
+      <div class="section">
+        <h3>Notes</h3>
+        <div class="preserve">${escapeHtml(notes)}</div>
+      </div>
+
+      ${
+        summary
+          ? `<div class="section"><h3>Conversation Summary</h3><div class="preserve">${escapeHtml(summary)}</div></div>`
+          : ""
+      }
+    </div>
+  </body>
+</html>`;
+  };
+
+  const handlePrintPrescription = () => {
+    const html = buildPrescriptionHtml();
+    const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  const handleExportPrescriptionHtml = () => {
+    const html = buildPrescriptionHtml();
+    const safeName = (activePatient?.name || "patient").replace(/[^a-z0-9_-]+/gi, "_");
+    const dateToken = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `prescription_${safeName}_${dateToken}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-2 mb-6 sm:mb-8">
@@ -150,6 +276,7 @@ export default function DoctorQueuePage() {
               <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   type="button"
+                  onClick={handlePrintPrescription}
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors"
                 >
                   <Printer className="w-5 h-5" />
@@ -157,6 +284,7 @@ export default function DoctorQueuePage() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleExportPrescriptionHtml}
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors"
                 >
                   <Download className="w-5 h-5" />
