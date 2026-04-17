@@ -12,6 +12,7 @@ import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
 import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
 import type { HandwritingStrokeBundle } from "@shared/handwriting";
+import type { LetterheadFieldMap } from "@shared/api";
 import type { QueueRow } from "@/components/QueueList";
 import type { Letterhead } from "@/context/ClinicContext";
 import { Medicine } from "@/context/ClinicContext";
@@ -59,6 +60,7 @@ type DoctorPortalContextValue = {
   completing: boolean;
   handleGeneratePrescription: () => Promise<void>;
   clinicLetterhead: Letterhead | null;
+  clinicLetterheadFieldMap: LetterheadFieldMap;
   clinicMeta: { name: string; phone?: string | null; address?: string | null } | null;
   recentConsultations: DoctorRecentConsultation[];
   recentLoading: boolean;
@@ -98,6 +100,7 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const [clinicLetterhead, setClinicLetterhead] = useState<Letterhead | null>(null);
+  const [clinicLetterheadFieldMap, setClinicLetterheadFieldMap] = useState<LetterheadFieldMap>({});
   const [clinicMeta, setClinicMeta] = useState<{
     name: string;
     phone?: string | null;
@@ -127,6 +130,7 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
               createdAt: new Date(),
             });
           }
+          setClinicLetterheadFieldMap((j.letterhead?.fieldMap as LetterheadFieldMap | undefined) || {});
         }
       })
       .catch(() => {});
@@ -341,6 +345,7 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
     completing,
     handleGeneratePrescription,
     clinicLetterhead,
+    clinicLetterheadFieldMap,
     clinicMeta,
     recentConsultations,
     recentLoading,

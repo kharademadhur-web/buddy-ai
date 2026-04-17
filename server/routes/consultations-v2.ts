@@ -10,10 +10,28 @@ import { sendJsonError } from "../lib/send-json-error";
 
 const router = Router();
 
+function isMissingConsultationColumnError(message: string, columns: string[]): boolean {
+  const lowered = message.toLowerCase();
+  return columns.some((column) => {
+    const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").toLowerCase();
+    return (
+      lowered.includes(`could not find the '${escaped}' column of 'consultations'`) ||
+      new RegExp(`column\\s+["']?${escaped}["']?\\s+does not exist`, "i").test(message)
+    );
+  });
+}
+
 function isMissingConsultationOptionalColumnError(message: string): boolean {
-  return /Could not find the '(ai_summary|ai_transcript|recording_consent|handwriting_strokes|handwriting_image_path|structured_prescription)' column of 'consultations'|column .* does not exist/i.test(
-    message
-  );
+  return isMissingConsultationColumnError(message, [
+    "ai_summary",
+    "ai_transcript",
+    "recording_consent",
+    "handwriting_strokes",
+    "handwriting_image_path",
+    "structured_prescription",
+    "workflow_status",
+    "payment_notified_at",
+  ]);
 }
 
 const completeSchema = z.object({
@@ -158,6 +176,7 @@ router.post(
       delete consultationInsert.ai_summary;
       delete consultationInsert.recording_consent;
       delete consultationInsert.structured_prescription;
+      delete consultationInsert.workflow_status;
       consultationRes = await supabase
         .from("consultations")
         .insert(consultationInsert)
@@ -467,7 +486,12 @@ router.get(
     }
 
     const { data, error } = await q;
-    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    if (error) {
+      if (isMissingConsultationColumnError(error.message, ["workflow_status", "payment_notified_at"])) {
+        return res.json({ success: true, alerts: [] });
+      }
+      return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+    }
     return res.json({ success: true, alerts: data ?? [] });
   }
 );

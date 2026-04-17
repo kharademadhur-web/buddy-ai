@@ -18,6 +18,12 @@ function isMissingBillsCreatedByColumnError(message: string): boolean {
   );
 }
 
+function isMissingConsultationWorkflowColumnsError(message: string): boolean {
+  return /Could not find the '(workflow_status|payment_notified_at)' column of 'consultations'|column .*workflow_status.* does not exist|column .*payment_notified_at.* does not exist/i.test(
+    message
+  );
+}
+
 /**
  * GET /api/billing/summary?clinicId=&date=YYYY-MM-DD
  */
@@ -266,13 +272,16 @@ router.post(
 
       const paidAt = data.paid_at || new Date().toISOString();
       // Receptionists may not UPDATE consultations under RLS; service role keeps workflow in sync.
-      await getSupabaseClient()
+      const workflowSync = await getSupabaseClient()
         .from("consultations")
         .update({
           workflow_status: "paid",
           payment_notified_at: paidAt,
         })
         .eq("appointment_id", existing.data.appointment_id);
+      if (workflowSync.error && !isMissingConsultationWorkflowColumnsError(workflowSync.error.message)) {
+        console.warn("[billing] failed syncing consultation workflow:", workflowSync.error.message);
+      }
     }
 
     await writeAuditLog({
