@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { CreateClinic } from "./onboarding/CreateClinic";
 import { AddDoctor } from "./onboarding/AddDoctor";
 import { AddReceptionist } from "./onboarding/AddReceptionist";
@@ -6,10 +7,12 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, AlertTriangle } from "lucide-react";
 import { apiFetch, getAccessToken } from "@/lib/api-base";
+import { Button } from "@/components/ui/button";
 
 type Step = 1 | 2 | 3;
 
 export default function AdminOnboarding() {
+  const navigate = useNavigate();
   const { tokens } = useAdminAuth();
   const [step, setStep] = useState<Step>(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,6 +20,12 @@ export default function AdminOnboarding() {
   const [createdClinic, setCreatedClinic] = useState<any>(null);
   const [doctorCredentials, setDoctorCredentials] = useState<any>(null);
   const [receptionistCredentials, setReceptionistCredentials] = useState<any>(null);
+  const [doctorCredentialsList, setDoctorCredentialsList] = useState<Array<{ user_id: string; password: string }>>([]);
+  const [receptionistCredentialsList, setReceptionistCredentialsList] = useState<Array<{ user_id: string; password: string }>>(
+    []
+  );
+  const [doctorFormKey, setDoctorFormKey] = useState(0);
+  const [receptionistFormKey, setReceptionistFormKey] = useState(0);
   /** Set when the user account was created but KYC upload/attach failed (e.g. schema mismatch). */
   const [doctorKycWarning, setDoctorKycWarning] = useState("");
   const [receptionistKycWarning, setReceptionistKycWarning] = useState("");
@@ -169,6 +178,9 @@ export default function AdminOnboarding() {
     try {
       const json = await addUser("doctor", data);
       setDoctorCredentials(json.credentials);
+      if (json.credentials?.user_id && json.credentials?.password) {
+        setDoctorCredentialsList((prev) => [json.credentials, ...prev]);
+      }
 
       const userId = json.user?.id as string | undefined;
       if (userId) {
@@ -190,7 +202,7 @@ export default function AdminOnboarding() {
         }
       }
 
-      setStep(3);
+      setDoctorFormKey((k) => k + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create doctor");
     } finally {
@@ -205,6 +217,9 @@ export default function AdminOnboarding() {
     try {
       const json = await addUser("receptionist", data);
       setReceptionistCredentials(json.credentials);
+      if (json.credentials?.user_id && json.credentials?.password) {
+        setReceptionistCredentialsList((prev) => [json.credentials, ...prev]);
+      }
 
       const userId = json.user?.id as string | undefined;
       if (userId) {
@@ -226,7 +241,7 @@ export default function AdminOnboarding() {
         }
       }
 
-      setStep(3);
+      setReceptionistFormKey((k) => k + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create receptionist");
     } finally {
@@ -277,18 +292,26 @@ export default function AdminOnboarding() {
       {step === 1 && <CreateClinic onNext={createClinic} isLoading={isLoading} error={error} />}
       {step === 2 && (
         <AddDoctor
+          key={`doctor-form-${doctorFormKey}`}
           onNext={createDoctor}
           onBack={() => setStep(1)}
           isLoading={isLoading}
           error={error}
+          primaryLabel="+ Add doctor"
+          secondaryActionLabel="Continue to receptionists"
+          onSecondaryAction={() => setStep(3)}
         />
       )}
       {step === 3 && (
         <AddReceptionist
+          key={`reception-form-${receptionistFormKey}`}
           onNext={createReceptionist}
           onBack={() => setStep(2)}
           isLoading={isLoading}
           error={error}
+          primaryLabel="+ Add receptionist"
+          secondaryActionLabel="Finish onboarding"
+          onSecondaryAction={() => navigate(createdClinic?.id ? `/admin-dashboard/clinic/${createdClinic.id}` : "/admin-dashboard/users")}
         />
       )}
 
@@ -300,20 +323,41 @@ export default function AdminOnboarding() {
               The accounts above were created successfully. See the warning above if KYC did not save.
             </p>
           ) : null}
-          {doctorCredentials ? (
-            <div className="text-sm">
-              <div>Doctor User ID: <span className="font-mono">{doctorCredentials.user_id}</span></div>
-              <div>Doctor Password: <span className="font-mono">{doctorCredentials.password}</span></div>
+          {doctorCredentialsList.length > 0 ? (
+            <div className="text-sm space-y-1">
+              <div className="font-medium">Doctors added</div>
+              {doctorCredentialsList.map((cred) => (
+                <div key={cred.user_id}>
+                  Doctor User ID: <span className="font-mono">{cred.user_id}</span> · Password:{" "}
+                  <span className="font-mono">{cred.password}</span>
+                </div>
+              ))}
             </div>
           ) : null}
-          {receptionistCredentials ? (
-            <div className="text-sm">
-              <div>Receptionist User ID: <span className="font-mono">{receptionistCredentials.user_id}</span></div>
-              <div>Receptionist Password: <span className="font-mono">{receptionistCredentials.password}</span></div>
+          {receptionistCredentialsList.length > 0 ? (
+            <div className="text-sm space-y-1">
+              <div className="font-medium">Receptionists added</div>
+              {receptionistCredentialsList.map((cred) => (
+                <div key={cred.user_id}>
+                  Receptionist User ID: <span className="font-mono">{cred.user_id}</span> · Password:{" "}
+                  <span className="font-mono">{cred.password}</span>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>
       )}
+
+      {createdClinic?.id ? (
+        <div className="rounded-lg border bg-slate-50 p-4 flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => navigate(`/admin-dashboard/clinic/${createdClinic.id}`)}>
+            Open clinic detail
+          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate("/admin-dashboard/users")}>
+            Open users (add later)
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

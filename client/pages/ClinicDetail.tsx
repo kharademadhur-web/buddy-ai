@@ -652,9 +652,17 @@ export default function ClinicDetail() {
       <div className="rounded-xl border bg-white p-4 sm:p-6 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h2 className="text-lg font-semibold text-gray-900">Staff (doctors and receptionists)</h2>
-          <Button variant="outline" size="sm" onClick={() => void fetchStaff()} disabled={loading}>
-            Refresh staff
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin-dashboard/users")}>
+              + Add doctor
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin-dashboard/users")}>
+              + Add receptionist
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void fetchStaff()} disabled={loading}>
+              Refresh staff
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-gray-600">
           Portal login uses <span className="font-mono font-semibold">User ID</span>. Passwords are only shown once when a user is created unless you generate a new one.

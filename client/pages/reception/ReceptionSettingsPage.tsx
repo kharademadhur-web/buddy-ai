@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAdminAuth } from "@/context/AdminAuthContext";
+import { useReceptionPortal } from "@/context/ReceptionPortalContext";
 import { Button } from "@/components/ui/button";
 import PortalChangePasswordDialog from "@/components/PortalChangePasswordDialog";
 import { KeyRound, Hash, UserCircle, Phone, Building2 } from "lucide-react";
@@ -7,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export default function ReceptionSettingsPage() {
   const { user } = useAdminAuth();
+  const { clinicMeta } = useReceptionPortal();
   const [pwOpen, setPwOpen] = useState(false);
 
   return (
@@ -56,7 +58,11 @@ export default function ReceptionSettingsPage() {
               <Building2 className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-medium text-gray-500">Clinic</p>
-                <p className="text-sm font-semibold text-gray-900">{user?.clinic_code ? `ID: ${user.clinic_code}` : "—"}</p>
+                <p className="text-sm font-semibold text-gray-900">{clinicMeta?.name || "—"}</p>
+                {user?.clinic_code ? (
+                  <p className="text-xs text-gray-500 mt-0.5">ID: <span className="font-mono">{user.clinic_code}</span></p>
+                ) : null}
+                {clinicMeta?.phone ? <p className="text-xs text-gray-500 mt-0.5">Phone: {clinicMeta.phone}</p> : null}
               </div>
             </div>
           </div>

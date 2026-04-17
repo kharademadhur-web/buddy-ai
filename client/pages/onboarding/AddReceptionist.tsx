@@ -9,6 +9,9 @@ interface AddReceptionistProps {
   onBack: () => void;
   isLoading?: boolean;
   error?: string;
+  primaryLabel?: string;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
 }
 
 export function AddReceptionist({
@@ -16,6 +19,9 @@ export function AddReceptionist({
   onBack,
   isLoading = false,
   error,
+  primaryLabel,
+  secondaryActionLabel,
+  onSecondaryAction,
 }: AddReceptionistProps) {
   const [formData, setFormData] = useState({
     name: "",
@@ -236,20 +242,27 @@ export function AddReceptionist({
           >
             Back
           </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="flex-1 bg-green-600 hover:bg-green-700"
-          >
+          <Button type="submit" disabled={isLoading} className="flex-1 bg-green-600 hover:bg-green-700">
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Completing...
               </>
             ) : (
-              "Complete Onboarding"
+              primaryLabel || "Complete Onboarding"
             )}
           </Button>
+          {onSecondaryAction && secondaryActionLabel ? (
+            <Button
+              type="button"
+              disabled={isLoading}
+              variant="secondary"
+              className="flex-1"
+              onClick={onSecondaryAction}
+            >
+              {secondaryActionLabel}
+            </Button>
+          ) : null}
         </div>
       </form>
     </div>

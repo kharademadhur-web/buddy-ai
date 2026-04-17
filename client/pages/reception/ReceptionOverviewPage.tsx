@@ -4,7 +4,7 @@ import { Users, TrendingUp } from "lucide-react";
 
 export default function ReceptionOverviewPage() {
   const { user } = useAdminAuth();
-  const { clinicId, queue, summary, paymentQrUrl, error } = useReceptionPortal();
+  const { clinicId, queue, summary, paymentQrUrl, onlineDoctors, offlineDoctors, error } = useReceptionPortal();
 
   const completedToday = summary?.completedToday ?? 0;
   const totalCollected = summary?.totalCollected ?? 0;
@@ -94,6 +94,37 @@ export default function ReceptionOverviewPage() {
               Upload clinic payment QR in Admin → clinic (onboarding or clinic detail).
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
+        <h2 className="text-lg font-semibold text-gray-900">Doctor live status</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Online means doctor is accepting patients and active in doctor portal.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-semibold uppercase text-emerald-700">Online</p>
+            <p className="text-2xl font-bold text-emerald-900 mt-1">{onlineDoctors.length}</p>
+            <div className="mt-2 space-y-1 text-sm text-emerald-900">
+              {onlineDoctors.length > 0 ? (
+                onlineDoctors.map((d) => <p key={d.id}>• {d.name}</p>)
+              ) : (
+                <p className="text-emerald-700">No doctors online right now.</p>
+              )}
+            </div>
+          </div>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+            <p className="text-xs font-semibold uppercase text-rose-700">Offline</p>
+            <p className="text-2xl font-bold text-rose-900 mt-1">{offlineDoctors.length}</p>
+            <div className="mt-2 space-y-1 text-sm text-rose-900">
+              {offlineDoctors.length > 0 ? (
+                offlineDoctors.map((d) => <p key={d.id}>• {d.name}</p>)
+              ) : (
+                <p className="text-rose-700">All listed doctors are online.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
