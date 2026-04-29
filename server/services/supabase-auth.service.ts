@@ -55,9 +55,13 @@ export class SupabaseAuthService {
         .from("users")
         .select(`${baseSelect}, ${lockCol}`)
         .eq("user_id", user_id)
-        .single();
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-      if (!error) return { user: data, userError: null, lockCol };
+      if (!error) {
+        const first = Array.isArray(data) ? data[0] ?? null : data;
+        return { user: first, userError: null, lockCol };
+      }
 
       // 42703 = undefined_column
       if ((error as any).code === "42703") continue;

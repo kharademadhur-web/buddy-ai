@@ -17,7 +17,8 @@ function DoctorHashRedirect() {
       rx: `${base}/prescriptions`,
       prescription: `${base}/prescriptions`,
       analytics: `${base}/analytics`,
-      reports: `${base}/reports`,
+      reports: `${base}/queue#visit-reports`,
+      "visit-reports": `${base}/queue#visit-reports`,
       settings: `${base}/settings`,
     };
     const target = map[raw];

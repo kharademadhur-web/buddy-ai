@@ -7,6 +7,7 @@ import { requireRole } from "../middleware/rbac.middleware";
 import { realtimeService } from "../services/realtime.service";
 import type { CompleteConsultationRequest, RealtimeEvent } from "@shared/api";
 import { sendJsonError } from "../lib/send-json-error";
+import { notifyFollowUpScheduled } from "../services/followup-notifications.service";
 
 const router = Router();
 
@@ -226,17 +227,30 @@ router.post(
     }
 
     if (parsed.data.prescription?.followUpDate) {
-      const { error: fuErr } = await supabase.from("followups").insert({
-        clinic_id: parsed.data.clinicId,
-        patient_id: parsed.data.patientId,
-        doctor_user_id: req.user!.userId,
-        source_consultation_id: consultationRes.data.id,
-        due_date: parsed.data.prescription.followUpDate,
-        status: "scheduled",
-        notes: "Follow-up from consultation",
-      });
+      const dueYmd = parsed.data.prescription.followUpDate;
+      const { data: fuRow, error: fuErr } = await supabase
+        .from("followups")
+        .insert({
+          clinic_id: parsed.data.clinicId,
+          patient_id: parsed.data.patientId,
+          doctor_user_id: req.user!.userId,
+          source_consultation_id: consultationRes.data.id,
+          due_date: dueYmd,
+          status: "scheduled",
+          notes: "Follow-up from consultation",
+        })
+        .select("id")
+        .maybeSingle();
       if (fuErr) {
         console.warn("[followups] insert skipped:", fuErr.message);
+      } else if (fuRow) {
+        void notifyFollowUpScheduled({
+          clinicId: parsed.data.clinicId,
+          patientId: parsed.data.patientId,
+          doctorUserId: req.user!.userId,
+          dueDateYmd: dueYmd,
+          notes: "Follow-up from consultation",
+        }).catch((e) => console.warn("[followups] notify:", e));
       }
     }
 

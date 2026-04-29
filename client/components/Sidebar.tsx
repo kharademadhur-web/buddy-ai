@@ -13,6 +13,7 @@ import {
   Plus,
   Calendar,
   CreditCard,
+  Microscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -80,7 +81,6 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
     doctor: [
       { icon: LayoutDashboard, label: "Dashboard", path: "/doctor-dashboard" },
       { icon: Users, label: "Queue", path: "/doctor-dashboard/queue" },
-      { icon: FileText, label: "Reports", path: "/doctor-dashboard/reports" },
       { icon: FileText, label: "Prescriptions", path: "/doctor-dashboard/prescriptions" },
       { icon: BarChart3, label: "Analytics", path: "/doctor-dashboard/analytics" },
       { icon: User, label: "Profile", path: "/profile/basic" },
@@ -147,6 +147,13 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
   const navItemActive = (itemPath: string) => {
     if (role === "admin") return location.pathname === itemPath;
     if (role === "doctor" || role === "reception") {
+      if (role === "doctor" && itemPath.includes("#")) {
+        const [base, frag] = itemPath.split("#");
+        const p = location.pathname.replace(/\/$/, "") || "/";
+        const baseNorm = base.replace(/\/$/, "") || "/";
+        const h = (location.hash || "").replace(/^#/, "").toLowerCase();
+        return p === baseNorm && h === (frag || "").toLowerCase();
+      }
       return portalStaffNavActive(itemPath, location.pathname);
     }
     if (role === "solo-doctor") {

@@ -34,10 +34,11 @@ export async function rateLimit(
         .from("users")
         .select(`${baseSelect}, ${col}`)
         .eq("user_id", user_id)
-        .single();
+        .order("created_at", { ascending: false })
+        .limit(1);
 
       if (!result.error) {
-        user = result.data;
+        user = Array.isArray(result.data) ? result.data[0] ?? null : result.data;
         error = null;
         lockCol = col;
         break;

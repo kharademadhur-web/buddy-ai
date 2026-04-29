@@ -1,6 +1,8 @@
 /**
  * WhatsApp outbound
  * - Twilio WhatsApp: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (e.g. whatsapp:+14155238886)
+ * - Twilio approved templates (Content API): pass options.twilioContent { contentSid, variables } to sendWhatsAppMessage,
+ *   or set TWILIO_FOLLOWUP_CONTENT_SID + use follow-up notifications (variables {"1","2"} configurable).
  * - Meta Cloud API: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID (optional WHATSAPP_API_VERSION default v21.0)
  * - Otherwise: mock (logs only)
  */
@@ -32,7 +34,11 @@ interface WhatsAppResponse {
  * @param message - Message text to send
  * @returns Promise with response status
  */
-async function sendViaTwilio(toE164: string, body: string): Promise<{ ok: boolean; id?: string; err?: string }> {
+type TwilioSendPayload =
+  | { mode: "body"; body: string }
+  | { mode: "content"; contentSid: string; contentVariables: Record<string, string> };
+
+async function sendViaTwilio(toE164: string, payload: TwilioSendPayload): Promise<{ ok: boolean; id?: string; err?: string }> {
   const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
   const token = process.env.TWILIO_AUTH_TOKEN?.trim();
   const from = process.env.TWILIO_WHATSAPP_FROM?.trim();
@@ -40,7 +46,16 @@ async function sendViaTwilio(toE164: string, body: string): Promise<{ ok: boolea
 
   const to = toE164.startsWith("+") ? `whatsapp:${toE164}` : `whatsapp:+${toE164.replace(/\D/g, "")}`;
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
-  const params = new URLSearchParams({ To: to, From: from, Body: body });
+  const params = new URLSearchParams();
+  params.set("To", to);
+  params.set("From", from);
+  if (payload.mode === "body") {
+    params.set("Body", payload.body);
+  } else {
+    params.set("ContentSid", payload.contentSid);
+    params.set("ContentVariables", JSON.stringify(payload.contentVariables));
+  }
+
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: "POST",
     headers: {
@@ -82,9 +97,15 @@ async function sendViaMetaCloud(toDigits: string, body: string): Promise<{ ok: b
   return { ok: true, id: data.messages?.[0]?.id };
 }
 
+export type SendWhatsAppOptions = {
+  /** Twilio Content API (approved WhatsApp template). Mutually exclusive with plain Body on Twilio. */
+  twilioContent?: { contentSid: string; variables: Record<string, string> };
+};
+
 export async function sendWhatsAppMessage(
   phoneNumber: string,
-  message: string
+  message: string,
+  options?: SendWhatsAppOptions
 ): Promise<WhatsAppResponse> {
   try {
     const e164 = formatPhoneNumberForWhatsApp(phoneNumber);
@@ -96,13 +117,30 @@ export async function sendWhatsAppMessage(
       };
     }
 
-    const twilio = await sendViaTwilio(e164, message);
+    const tc = options?.twilioContent;
+    const twilio = tc
+      ? await sendViaTwilio(e164, {
+          mode: "content",
+          contentSid: tc.contentSid,
+          contentVariables: tc.variables,
+        })
+      : await sendViaTwilio(e164, { mode: "body", body: message });
+
     if (twilio.ok) {
-      console.log(`[WhatsApp] Twilio sent to ${e164} id=${twilio.id}`);
+      console.log(`[WhatsApp] Twilio sent to ${e164} id=${twilio.id}${tc ? " (ContentSid)" : ""}`);
       return {
         success: true,
         messageId: twilio.id,
         status: "sent",
+        timestamp: new Date(),
+      };
+    }
+
+    if (tc) {
+      console.warn(`[WhatsApp] Twilio template send failed: ${twilio.err || "unknown"}`);
+      return {
+        success: false,
+        error: twilio.err || "Twilio template send failed",
         timestamp: new Date(),
       };
     }

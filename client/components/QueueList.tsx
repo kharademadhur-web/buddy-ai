@@ -36,7 +36,7 @@ export default function QueueList({
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Live Queue</h2>
+          <h2 className="text-lg font-bold text-gray-900">Queue</h2>
           {loading && (
             <span className="text-xs text-gray-500">Updating…</span>
           )}
@@ -46,17 +46,15 @@ export default function QueueList({
         </p>
       </div>
 
-      <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+      <div className="divide-y divide-gray-100">
         {rows.length > 0 ? (
           rows.map((row) => {
             const patient = row.patient;
             const StatusIcon = statusConfig[patient.status].icon;
 
             return (
-              <button
+              <div
                 key={row.appointmentId}
-                type="button"
-                onClick={() => onPatientSelect?.(patient.id, row.appointmentId)}
                 className={cn(
                   "w-full p-4 text-left transition-colors hover:bg-gray-50",
                   (selectedAppointmentId === row.appointmentId ||
@@ -64,8 +62,12 @@ export default function QueueList({
                     "bg-blue-50 border-l-4 border-blue-600"
                 )}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onPatientSelect?.(patient.id, row.appointmentId)}
+                    className="flex-1 text-left"
+                  >
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm font-bold text-gray-600">
                         Token #{patient.token}
@@ -81,7 +83,7 @@ export default function QueueList({
                         Complaint: {patient.symptoms}
                       </p>
                     )}
-                  </div>
+                  </button>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     <span
                       className={cn(
@@ -105,9 +107,16 @@ export default function QueueList({
                         )}
                       />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => onPatientSelect?.(patient.id, row.appointmentId)}
+                      className="mt-2 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    >
+                      View
+                    </button>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })
         ) : (

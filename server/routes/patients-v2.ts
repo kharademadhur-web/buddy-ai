@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
-import { signSupabaseRlsJwt } from "../config/supabase-jwt";
+import { getSupabaseClient } from "../config/supabase";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { normalizePhoneDigits } from "../services/otp-auth.service";
@@ -67,10 +66,7 @@ router.post(
       }
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
 
     // Upsert by unique (clinic_id, phone) behavior
     const { data, error } = await supabase
@@ -103,33 +99,34 @@ router.get(
   authMiddleware,
   requireRole("doctor", "receptionist", "independent", "super-admin"),
   async (req: Request, res: Response) => {
-    const { query, clinicId, limit } = req.query as {
-      query?: string;
-      clinicId?: string;
-      limit?: string;
-    };
+    try {
+      const { query, clinicId, limit } = req.query as {
+        query?: string;
+        clinicId?: string;
+        limit?: string;
+      };
 
-    const effectiveClinicId = clinicId || req.user?.clinicId;
-    if (!effectiveClinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
-    if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
-      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+      const effectiveClinicId = clinicId || req.user?.clinicId;
+      if (!effectiveClinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
+      if (req.user?.role !== "super-admin" && req.user?.clinicId !== effectiveClinicId) {
+        return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+      }
+
+      const supabase = getSupabaseClient();
+
+      let q = supabase.from("patients").select("*").eq("clinic_id", effectiveClinicId);
+      if (query) {
+        const like = `%${query}%`;
+        q = q.or(`name.ilike.${like},phone.ilike.${like}`);
+      }
+      const take = Math.min(parseInt(limit || "20", 10) || 20, 50);
+      const { data, error } = await q.order("updated_at", { ascending: false }).limit(take);
+      if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+      return res.json({ success: true, patients: data ?? [] });
+    } catch (err) {
+      console.error("[patients-v2] unhandled list error", err);
+      return sendJsonError(res, 500, err instanceof Error ? err.message : "Patient list failed", "INTERNAL_SERVER_ERROR");
     }
-
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
-
-    let q = supabase.from("patients").select("*").eq("clinic_id", effectiveClinicId);
-    if (query) {
-      // naive: search by name or phone contains
-      const like = `%${query}%`;
-      q = q.or(`name.ilike.${like},phone.ilike.${like}`);
-    }
-    const take = Math.min(parseInt(limit || "20", 10) || 20, 50);
-    const { data, error } = await q.order("updated_at", { ascending: false }).limit(take);
-    if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
-    return res.json({ success: true, patients: data ?? [] });
   }
 );
 
@@ -151,10 +148,7 @@ router.patch(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
       .from("patients")
@@ -183,10 +177,7 @@ router.get(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from("patients")
       .select("*")
@@ -217,10 +208,7 @@ router.post(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
       .from("patient_vitals")
@@ -258,10 +246,7 @@ router.get(
       return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
     }
 
-    const supabase =
-      req.user?.role === "super-admin"
-        ? getSupabaseClient()
-        : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
+    const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
       .from("patient_vitals")

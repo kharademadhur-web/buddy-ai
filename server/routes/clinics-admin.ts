@@ -318,12 +318,26 @@ router.put(
       if (payment_qr_storage_path !== undefined) patch.payment_qr_storage_path = payment_qr_storage_path;
     }
 
-    const { data: clinic, error } = await supabase
+    let updateRes = await supabase
       .from("clinics")
       .update(patch)
       .eq("id", clinicId)
       .select()
       .single();
+
+    // Older schemas may not have letterhead_mime; retry without it.
+    if (updateRes.error && String(updateRes.error.message || "").toLowerCase().includes("letterhead_mime")) {
+      const fallbackPatch = { ...patch };
+      delete (fallbackPatch as { letterhead_mime?: unknown }).letterhead_mime;
+      updateRes = await supabase
+        .from("clinics")
+        .update(fallbackPatch)
+        .eq("id", clinicId)
+        .select()
+        .single();
+    }
+
+    const { data: clinic, error } = updateRes;
 
     if (error || !clinic) {
       throw new Error(`Failed to update clinic: ${error?.message}`);

@@ -120,7 +120,7 @@ export interface PrescriptionItemDTO {
 export interface HandwritingTranscribeResponse {
   success: boolean;
   text: string;
-  provider: "openai" | "xai";
+  provider: "openai" | "anthropic" | "xai";
   disclaimer: string;
 }
 

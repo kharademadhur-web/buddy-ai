@@ -193,7 +193,7 @@ router.post(
       return sendJsonError(
         res,
         503,
-        "Handwriting transcription is not configured. Set OPENAI_API_KEY (recommended) or XAI_API_KEY with a vision-capable model.",
+        "Handwriting transcription is not configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or XAI_API_KEY with a vision-capable model.",
         "SERVICE_UNAVAILABLE"
       );
     }

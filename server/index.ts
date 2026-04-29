@@ -28,6 +28,7 @@ import staffRoutes from "./routes/staff";
 import aiClinicalRoutes from "./routes/ai-clinical";
 import messagingWhatsappRoutes from "./routes/messaging-whatsapp";
 import medicinesRoutes from "./routes/medicines";
+import followupsV2Routes from "./routes/followups-v2";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -191,6 +192,7 @@ export async function createServer() {
   app.use("/api/ai", requireActiveClinicSubscription, aiClinicalRoutes);
   app.use("/api/messaging", requireActiveClinicSubscription, messagingWhatsappRoutes);
   app.use("/api/medicines", requireActiveClinicSubscription, medicinesRoutes);
+  app.use("/api/followups", requireActiveClinicSubscription, followupsV2Routes);
 
   // =====================
   // Device Approval Routes

@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
@@ -80,6 +81,8 @@ type DoctorPortalContextValue = {
 const DoctorPortalContext = createContext<DoctorPortalContextValue | null>(null);
 
 export function DoctorPortalProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId, {
@@ -242,6 +245,10 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
   const activePatient = selectedRow?.patient ?? null;
 
   const handleSelectPatient = async (_patientId: string, appointmentId: string) => {
+    const path = (location.pathname || "").replace(/\/$/, "") || "/";
+    if (path !== "/doctor-dashboard/queue") {
+      navigate("/doctor-dashboard/queue");
+    }
     setSelectedAppointmentId(appointmentId);
     setPrescriptionNotes("");
     setHandwritingStrokes(null);

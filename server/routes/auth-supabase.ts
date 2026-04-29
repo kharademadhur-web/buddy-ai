@@ -68,7 +68,6 @@ router.post(
  */
 router.post(
   "/login",
-  rateLimit,
   asyncHandler(async (req: Request, res: Response) => {
     const { user_id, password, deviceId } = req.body;
 

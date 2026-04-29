@@ -10,6 +10,8 @@ interface ReportsTabProps {
   patientId: string;
   patientName: string;
   clinicId: string;
+  /** Increment to refetch the document list (e.g. after uploading from the queue). */
+  reloadKey?: number;
 }
 
 function mapDocType(t: string): DiagnosticReport["type"] {
@@ -24,7 +26,7 @@ function mapDocType(t: string): DiagnosticReport["type"] {
   return (allowed.includes(t as DiagnosticReport["type"]) ? t : "other") as DiagnosticReport["type"];
 }
 
-export default function ReportsTab({ patientId, patientName, clinicId }: ReportsTabProps) {
+export default function ReportsTab({ patientId, patientName, clinicId, reloadKey = 0 }: ReportsTabProps) {
   const [reports, setReports] = useState<DiagnosticReport[]>([]);
   const [viewingReport, setViewingReport] = useState<DiagnosticReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export default function ReportsTab({ patientId, patientName, clinicId }: Reports
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadKey]);
 
   const handleUpload = (_data: {
     type: string;
