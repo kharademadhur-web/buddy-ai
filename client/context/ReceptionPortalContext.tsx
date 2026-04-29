@@ -11,6 +11,7 @@ type ReceptionPortalContextValue = {
   error: string | null;
   refetch: () => Promise<void>;
   summary: ReturnType<typeof useBillingSummary>["summary"];
+  summaryLoading: boolean;
   refetchSummary: () => Promise<void>;
   paymentQrUrl: string | null;
   clinicMeta: { name: string; phone?: string | null; address?: string | null; clinicCode?: string | null } | null;
@@ -24,7 +25,7 @@ export function ReceptionPortalProvider({ children }: { children: ReactNode }) {
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId);
-  const { summary, refetch: refetchSummary } = useBillingSummary(clinicId);
+  const { summary, loading: summaryLoading, refetch: refetchSummary } = useBillingSummary(clinicId);
   const [paymentQrUrl, setPaymentQrUrl] = useState<string | null>(null);
   const [clinicMeta, setClinicMeta] = useState<{
     name: string;
@@ -92,6 +93,7 @@ export function ReceptionPortalProvider({ children }: { children: ReactNode }) {
     error,
     refetch,
     summary,
+    summaryLoading,
     refetchSummary,
     paymentQrUrl,
     clinicMeta,

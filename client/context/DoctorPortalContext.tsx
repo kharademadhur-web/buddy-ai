@@ -7,7 +7,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { useQueueAndPatients } from "@/hooks/useClinicWorkflow";
 import { appointmentToPatient } from "@/lib/queue-ui";
@@ -76,13 +75,13 @@ type DoctorPortalContextValue = {
   voiceTranscript: string;
   voiceEnglishPhrase: string;
   setVoiceSession: (o: { transcript: string; englishPhrase: string }) => void;
+  /** Force a fresh signed URL for the clinic letterhead (used before print/save). */
+  refreshClinicLetterhead: () => Promise<Letterhead | null>;
 };
 
 const DoctorPortalContext = createContext<DoctorPortalContextValue | null>(null);
 
 export function DoctorPortalProvider({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const { user } = useAdminAuth();
   const clinicId = user?.clinic_id ?? null;
   const { queue, patientsById, loading, error, refetch } = useQueueAndPatients(clinicId, {
@@ -110,34 +109,56 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
     address?: string | null;
   } | null>(null);
 
-  useEffect(() => {
-    if (!clinicId) return;
-    apiFetch(`/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(clinicId)}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.success && j.clinic) {
-          setClinicMeta({
-            name: j.clinic.name ?? "Clinic",
-            phone: j.clinic.phone ?? null,
-            address: j.clinic.address ?? null,
-          });
-          if (j.letterhead?.signedUrl) {
-            setClinicLetterhead({
-              id: clinicId,
-              name: j.clinic?.name ?? "Clinic",
-              templateUrl: j.letterhead.signedUrl,
-              mime: j.letterhead?.mime ?? undefined,
-              clinicName: j.clinic?.name ?? "Clinic",
-              clinicAddress: j.clinic?.address ?? "",
-              clinicPhone: j.clinic?.phone ?? "",
-              createdAt: new Date(),
-            });
-          }
-          setClinicLetterheadFieldMap((j.letterhead?.fieldMap as LetterheadFieldMap | undefined) || {});
+  const refreshClinicLetterhead = useCallback(async (): Promise<Letterhead | null> => {
+    if (!clinicId) {
+      setClinicLetterhead(null);
+      setClinicLetterheadFieldMap({});
+      return null;
+    }
+    try {
+      const r = await apiFetch(
+        `/api/staff/clinic/letterhead-active?clinicId=${encodeURIComponent(clinicId)}`
+      );
+      const j = await r.json();
+      if (j?.success && j.clinic) {
+        setClinicMeta({
+          name: j.clinic.name ?? "Clinic",
+          phone: j.clinic.phone ?? null,
+          address: j.clinic.address ?? null,
+        });
+        let nextLetterhead: Letterhead | null = null;
+        if (j.letterhead?.signedUrl) {
+          nextLetterhead = {
+            id: clinicId,
+            name: j.clinic?.name ?? "Clinic",
+            templateUrl: j.letterhead.signedUrl,
+            mime: j.letterhead?.mime ?? undefined,
+            clinicName: j.clinic?.name ?? "Clinic",
+            clinicAddress: j.clinic?.address ?? "",
+            clinicPhone: j.clinic?.phone ?? "",
+            createdAt: new Date(),
+          };
+          setClinicLetterhead(nextLetterhead);
+        } else {
+          setClinicLetterhead(null);
         }
-      })
-      .catch(() => {});
+        setClinicLetterheadFieldMap(
+          (j.letterhead?.fieldMap as LetterheadFieldMap | undefined) || {}
+        );
+        return nextLetterhead;
+      } else {
+        setClinicLetterhead(null);
+        setClinicLetterheadFieldMap({});
+      }
+    } catch {
+      // network errors keep the existing state; safer than nuking on transient blip
+    }
+    return null;
   }, [clinicId]);
+
+  useEffect(() => {
+    void refreshClinicLetterhead();
+  }, [refreshClinicLetterhead]);
 
   const [recentConsultations, setRecentConsultations] = useState<DoctorRecentConsultation[]>([]);
   const [recentLoading, setRecentLoading] = useState(false);
@@ -245,10 +266,6 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
   const activePatient = selectedRow?.patient ?? null;
 
   const handleSelectPatient = async (_patientId: string, appointmentId: string) => {
-    const path = (location.pathname || "").replace(/\/$/, "") || "/";
-    if (path !== "/doctor-dashboard/queue") {
-      navigate("/doctor-dashboard/queue");
-    }
     setSelectedAppointmentId(appointmentId);
     setPrescriptionNotes("");
     setHandwritingStrokes(null);
@@ -365,6 +382,7 @@ export function DoctorPortalProvider({ children }: { children: ReactNode }) {
     voiceTranscript,
     voiceEnglishPhrase,
     setVoiceSession,
+    refreshClinicLetterhead,
   };
 
   return <DoctorPortalContext.Provider value={value}>{children}</DoctorPortalContext.Provider>;

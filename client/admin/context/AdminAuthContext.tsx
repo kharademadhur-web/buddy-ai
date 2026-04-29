@@ -36,6 +36,11 @@ interface AdminAuthContextType {
 
   // Auth methods — login resolves to the authenticated user for immediate post-login routing
   login: (user_id: string, password: string, deviceId?: string) => Promise<AdminUser>;
+  /** Auto-login after device approval — stores tokens and user without hitting the login endpoint again */
+  loginWithTokens: (tokens: AuthTokens, backendUser: {
+    id: string; user_id: string; name: string; email: string | null;
+    phone: string | null; role: string; clinic_id: string | null; clinic_code?: string | null;
+  }) => AdminUser;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
@@ -103,18 +108,26 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Token refresh failed");
       }
 
-      const newAccessToken = data.accessToken;
+      const newAccessToken: string = data.accessToken;
+      // Server may rotate the refresh token; persist the new one if returned.
+      const newRefreshToken: string =
+        typeof data.refreshToken === "string" && data.refreshToken
+          ? data.refreshToken
+          : refreshToken;
+      const ttlSec: number =
+        typeof data.expiresIn === "number" && data.expiresIn > 0
+          ? data.expiresIn
+          : 15 * 60;
 
-      const expiryTime = Date.now() + 15 * 60 * 1000; // 15 minutes
+      const expiryTime = Date.now() + ttlSec * 1000;
       sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
+      sessionStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, newRefreshToken);
       sessionStorage.setItem(STORAGE_KEYS.EXPIRY, expiryTime.toString());
 
-      const rt =
-        sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || refreshToken;
       setTokens({
         accessToken: newAccessToken,
-        refreshToken: rt,
-        expiresIn: 15 * 60,
+        refreshToken: newRefreshToken,
+        expiresIn: ttlSec,
       });
 
       return true;
@@ -253,6 +266,34 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithTokens = (
+    authTokens: AuthTokens,
+    backendUser: {
+      id: string; user_id: string; name: string; email: string | null;
+      phone: string | null; role: string; clinic_id: string | null; clinic_code?: string | null;
+    }
+  ): AdminUser => {
+    const authUser: AdminUser = {
+      id: backendUser.id,
+      user_id: backendUser.user_id,
+      name: backendUser.name,
+      email: backendUser.email,
+      phone: backendUser.phone,
+      role: backendUser.role as AdminRole,
+      clinic_id: backendUser.clinic_id,
+      clinic_code: backendUser.clinic_code ?? null,
+      loginTime: new Date(),
+    };
+    const expiryTime = Date.now() + authTokens.expiresIn * 1000;
+    sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, authTokens.accessToken);
+    sessionStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, authTokens.refreshToken);
+    sessionStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(authUser));
+    sessionStorage.setItem(STORAGE_KEYS.EXPIRY, expiryTime.toString());
+    setTokens(authTokens);
+    setUser(authUser);
+    return authUser;
+  };
+
   const refreshToken = async (): Promise<boolean> => {
     const savedRefreshToken = sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
     if (!savedRefreshToken) {
@@ -331,6 +372,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         error,
         login,
+        loginWithTokens,
         logout,
         refreshToken,
         changePassword,

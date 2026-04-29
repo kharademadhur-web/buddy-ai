@@ -229,13 +229,13 @@ const payBillSchema = z.object({
 router.post(
   "/:id/payments",
   authMiddleware,
-  requireRole("receptionist", "super-admin"),
+  requireRole("receptionist", "super-admin", "clinic-admin"),
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = payBillSchema.safeParse(req.body);
     if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
 
     const supabase =
-      req.user?.role === "super-admin"
+      req.user?.role === "super-admin" || req.user?.role === "clinic-admin"
         ? getSupabaseClient()
         : getSupabaseRlsClient(signSupabaseRlsJwt(req.user!));
     const existing = await supabase

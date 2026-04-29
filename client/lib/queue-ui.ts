@@ -13,6 +13,7 @@ export function appointmentToPatient(
     id: patient?.id || appt.patient_id,
     name: patient?.name || "Unknown patient",
     age: ageFromDob(patient?.date_of_birth ?? null),
+    gender: patient?.gender ?? null,
     phone: patient?.phone || "",
     symptoms: appt.chief_complaint || "",
     token,

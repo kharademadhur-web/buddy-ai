@@ -6,6 +6,8 @@ let expressServer: any = null;
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // Load .env.mobile or .env.web based on --mode flag
+  envDir: ".",
   server: {
     host: "0.0.0.0",
     port: 8080,

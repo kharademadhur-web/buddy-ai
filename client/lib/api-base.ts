@@ -41,10 +41,24 @@ async function refreshAccessTokenOnce(): Promise<boolean> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: refresh }),
       });
-      const data = (await res.json()) as { success?: boolean; accessToken?: string };
+      const data = (await res.json()) as {
+        success?: boolean;
+        accessToken?: string;
+        refreshToken?: string;
+        expiresIn?: number;
+      };
       if (!res.ok || !data.success || !data.accessToken) return false;
       sessionStorage.setItem(ACCESS_STORAGE_KEY, data.accessToken);
-      sessionStorage.setItem(EXPIRY_STORAGE_KEY, String(Date.now() + 15 * 60 * 1000));
+      // Server now rotates refresh tokens — store the new one if returned so
+      // the next refresh uses an unrevoked credential.
+      if (data.refreshToken) {
+        sessionStorage.setItem(REFRESH_STORAGE_KEY, data.refreshToken);
+      }
+      const ttlMs =
+        typeof data.expiresIn === "number" && data.expiresIn > 0
+          ? data.expiresIn * 1000
+          : 15 * 60 * 1000;
+      sessionStorage.setItem(EXPIRY_STORAGE_KEY, String(Date.now() + ttlMs));
       window.dispatchEvent(new Event("admin-access-token-refreshed"));
       return true;
     } catch {

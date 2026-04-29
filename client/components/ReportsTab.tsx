@@ -4,7 +4,7 @@ import ReportList from "./ReportList";
 import ReportViewerModal from "./ReportViewerModal";
 import { DiagnosticReport } from "@/context/ClinicContext";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api-base";
+import { apiFetch, apiErrorMessage } from "@/lib/api-base";
 
 interface ReportsTabProps {
   patientId: string;
@@ -39,8 +39,11 @@ export default function ReportsTab({ patientId, patientName, clinicId, reloadKey
         clinicId,
       });
       const res = await apiFetch(`/api/uploads/documents?${qs.toString()}`);
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Failed to load documents");
+      const j = await res.json().catch(() => ({}));
+      // The API returns errors as { error: { message, code, status } }; using
+      // `j.error` directly stringified an object as "[object Object]" in the
+      // toast. apiErrorMessage handles both string and object shapes.
+      if (!res.ok) throw new Error(apiErrorMessage(j) || "Failed to load documents");
       const list: DiagnosticReport[] = (j.documents || []).map((d: Record<string, unknown>) => ({
         id: String(d.id),
         patientId,

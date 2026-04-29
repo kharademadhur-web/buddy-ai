@@ -82,6 +82,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       { icon: LayoutDashboard, label: "Dashboard", path: "/doctor-dashboard" },
       { icon: Users, label: "Queue", path: "/doctor-dashboard/queue" },
       { icon: FileText, label: "Prescriptions", path: "/doctor-dashboard/prescriptions" },
+      { icon: Calendar, label: "Follow-ups", path: "/doctor-dashboard/follow-ups" },
       { icon: BarChart3, label: "Analytics", path: "/doctor-dashboard/analytics" },
       { icon: User, label: "Profile", path: "/profile/basic" },
       { icon: Settings, label: "Settings", path: "/doctor-dashboard/settings" },
@@ -273,7 +274,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                       setSheetOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left",
+                      "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left min-h-[48px] active:scale-95",
                       isActive ? "bg-blue-100 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100"
                     )}
                   >
@@ -297,7 +298,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                   setSheetOpen(false);
                   handleLogout();
                 }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all font-semibold"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all font-semibold min-h-[48px] active:scale-95"
               >
                 <LogOut className="w-5 h-5" />
                 Logout
@@ -402,7 +403,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
               type="button"
               onClick={() => navigatePortalPath(item.path)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left",
+                "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left min-h-[48px] active:scale-95",
                 isActive
                   ? "bg-blue-100 text-blue-700 font-semibold"
                   : "text-gray-700 hover:bg-gray-100"
@@ -425,8 +426,9 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       {/* Logout Button */}
       <div className="p-4 border-t border-gray-200">
         <button
+          type="button"
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all font-semibold"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all font-semibold min-h-[48px] active:scale-95"
         >
           <LogOut className="w-5 h-5" />
           Logout

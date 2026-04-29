@@ -6,12 +6,14 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AdminAuthProvider } from "./context/AdminAuthContext";
 import { AdminProtectedRoute } from "./components/ProtectedRoute";
 import { ClinicProvider } from "./context/ClinicContext";
+import { IS_MOBILE_BUILD } from "./config/buildTarget";
+import { useEffect, useState } from "react";
+import { apiUrl } from "./lib/api-base";
 
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 import { Profile } from "./pages/Profile";
 
-// New admin pages
 import AdminLogin from "./pages/AdminLogin";
 import PortalLogin from "./pages/PortalLogin";
 import DoctorDashboard from "./pages/DoctorDashboard";
@@ -19,22 +21,59 @@ import ReceptionDashboard from "./pages/ReceptionDashboard";
 
 const queryClient = new QueryClient();
 
+// ── Server health check banner shown on first load if API is unreachable ─────
+function ServerHealthBanner() {
+  const [status, setStatus] = useState<"checking" | "ok" | "error">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch(apiUrl("/health"), { signal: AbortSignal.timeout(5000) });
+        if (!cancelled) setStatus(res.ok ? "ok" : "error");
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    };
+    void check();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (status !== "error") return null;
+
+  return (
+    <div className="fixed top-0 inset-x-0 z-[9999] bg-red-600 text-white text-sm flex items-center justify-between px-4 py-2 gap-3 shadow-lg">
+      <span className="font-medium">
+        Cannot connect to server. Please check your internet connection.
+      </span>
+      <button
+        type="button"
+        onClick={() => { setStatus("checking"); window.location.reload(); }}
+        className="shrink-0 bg-white text-red-700 font-bold px-3 py-1 rounded text-xs active:scale-95 transition-transform"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <ServerHealthBanner />
         <AdminAuthProvider>
           <ClinicProvider>
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Navigate to="/portal/login" replace />} />
 
-                {/* Shared portal login for clinic users */}
+                {/* Shared portal login — mobile build redirects admin roles to web */}
                 <Route path="/portal/login" element={<PortalLogin />} />
 
-                {/* Staff dashboards (protected) */}
+                {/* Staff dashboards */}
                 <Route
                   path="/doctor-dashboard/*"
                   element={
@@ -58,18 +97,30 @@ export default function App() {
                   }
                 />
 
-                {/* Admin Auth */}
-                <Route path="/admin/login" element={<AdminLogin />} />
+                {/* Admin portal — web build only */}
+                {!IS_MOBILE_BUILD && (
+                  <>
+                    <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route
+                      path="/admin-dashboard/*"
+                      element={
+                        <AdminProtectedRoute requiredRole={["super-admin", "clinic-admin"]}>
+                          <AdminDashboard />
+                        </AdminProtectedRoute>
+                      }
+                    />
+                    <Route path="/admin" element={<Navigate to="/admin/login" replace />} />
+                  </>
+                )}
 
-                {/* Admin Portal (protected) - super-admin + clinic-admin (API-scoped) */}
-                <Route
-                  path="/admin-dashboard/*"
-                  element={
-                    <AdminProtectedRoute requiredRole={["super-admin", "clinic-admin"]}>
-                      <AdminDashboard />
-                    </AdminProtectedRoute>
-                  }
-                />
+                {/* Redirect admin routes to portal login on mobile */}
+                {IS_MOBILE_BUILD && (
+                  <>
+                    <Route path="/admin/login" element={<Navigate to="/portal/login" replace />} />
+                    <Route path="/admin-dashboard/*" element={<Navigate to="/portal/login" replace />} />
+                    <Route path="/admin" element={<Navigate to="/portal/login" replace />} />
+                  </>
+                )}
 
                 <Route
                   path="/profile"
@@ -88,13 +139,6 @@ export default function App() {
                   }
                 />
 
-                {/* Backwards-compat redirect */}
-                <Route
-                  path="/admin"
-                  element={<Navigate to="/admin/login" replace />}
-                />
-
-                {/* Catch-all Route */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>

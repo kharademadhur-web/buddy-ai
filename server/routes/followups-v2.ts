@@ -38,6 +38,8 @@ function ymdFromIso(iso: string): string {
 }
 
 function mapFollowUpRow(row: Record<string, unknown>) {
+  const channel = String(row.notification_channel ?? "");
+  const minutes = Number(row.reminder_minutes_before ?? 0);
   return {
     id: row.id,
     patientId: row.patient_id,
@@ -45,8 +47,32 @@ function mapFollowUpRow(row: Record<string, unknown>) {
     scheduledDate: row.due_date ? `${row.due_date}T12:00:00.000Z` : null,
     notes: row.notes ?? "",
     status: row.status === "scheduled" ? "scheduled" : row.status === "completed" ? "completed" : "cancelled",
-    notificationChannel: "whatsapp",
+    notificationChannel: ["whatsapp", "sms", "email"].includes(channel) ? channel : "whatsapp",
+    reminderMinutesBefore: Number.isFinite(minutes) && minutes >= 0 ? minutes : 0,
   };
+}
+
+/**
+ * Insert/update a followup row. Some deployments lack the
+ * `notification_channel` / `reminder_minutes_before` columns, so we retry
+ * without them on a 42703 (undefined_column) error to stay schema-tolerant.
+ */
+async function followupUpsertWithSchemaFallback<T>(
+  doInsert: (extras: Record<string, unknown>) => Promise<{ data: T | null; error: { code?: string; message: string } | null }>,
+  extras: Record<string, unknown>
+): Promise<{ data: T | null; error: { code?: string; message: string } | null }> {
+  const first = await doInsert(extras);
+  if (
+    first.error &&
+    (first.error.code === "42703" ||
+      /notification_channel|reminder_minutes_before/i.test(first.error.message))
+  ) {
+    const stripped: Record<string, unknown> = { ...extras };
+    delete stripped.notification_channel;
+    delete stripped.reminder_minutes_before;
+    return doInsert(stripped);
+  }
+  return first;
 }
 
 /**
@@ -66,9 +92,11 @@ router.get(
     const supabase = supabaseForUser(req);
     const today = new Date().toISOString().slice(0, 10);
 
+    // Selecting "*" so optional columns (notification_channel, reminder_minutes_before)
+    // come through if they exist in the DB; mapFollowUpRow tolerates either schema.
     const { data, error } = await supabase
       .from("followups")
-      .select("id, patient_id, doctor_user_id, due_date, status, notes")
+      .select("*")
       .eq("clinic_id", clinicId)
       .in("status", ["scheduled"])
       .gte("due_date", today)
@@ -110,18 +138,34 @@ router.post(
     const supabase = supabaseForUser(req);
     const dueYmd = ymdFromIso(b.scheduledDate);
 
-    const { data: inserted, error } = await supabase
-      .from("followups")
-      .insert({
-        clinic_id: b.clinicId,
-        patient_id: b.patientId,
-        doctor_user_id: b.doctorId,
-        due_date: dueYmd,
-        status: "scheduled",
-        notes: b.notes?.trim() || null,
-      })
-      .select("id, patient_id, doctor_user_id, due_date, status, notes")
-      .single();
+    const { data: inserted, error } = await followupUpsertWithSchemaFallback(
+      async (extras) => {
+        const { data, error } = await supabase
+          .from("followups")
+          .insert({
+            clinic_id: b.clinicId,
+            patient_id: b.patientId,
+            doctor_user_id: b.doctorId,
+            due_date: dueYmd,
+            status: "scheduled",
+            notes: b.notes?.trim() || null,
+            ...extras,
+          })
+          .select("*")
+          .single();
+        return {
+          data,
+          error: error
+            ? { code: (error as { code?: string }).code, message: error.message }
+            : null,
+        };
+      },
+      {
+        notification_channel: b.notificationChannel ?? "whatsapp",
+        reminder_minutes_before:
+          typeof b.reminderMinutesBefore === "number" ? b.reminderMinutesBefore : 0,
+      }
+    );
 
     if (error || !inserted) {
       return sendJsonError(res, 500, error?.message || "Failed to create follow-up", "INTERNAL_SERVER_ERROR");
@@ -176,13 +220,31 @@ router.put(
     const patch: Record<string, unknown> = {};
     if (body.data.scheduledDate) patch.due_date = ymdFromIso(body.data.scheduledDate);
     if (body.data.notes !== undefined) patch.notes = body.data.notes?.trim() || null;
+    const optionalExtras: Record<string, unknown> = {};
+    if (body.data.notificationChannel !== undefined) {
+      optionalExtras.notification_channel = body.data.notificationChannel;
+    }
+    if (typeof body.data.reminderMinutesBefore === "number") {
+      optionalExtras.reminder_minutes_before = body.data.reminderMinutesBefore;
+    }
 
-    const { data: updated, error } = await supabase
-      .from("followups")
-      .update(patch)
-      .eq("id", id)
-      .select("id, patient_id, doctor_user_id, due_date, status, notes")
-      .single();
+    const { data: updated, error } = await followupUpsertWithSchemaFallback(
+      async (extras) => {
+        const { data, error } = await supabase
+          .from("followups")
+          .update({ ...patch, ...extras })
+          .eq("id", id)
+          .select("*")
+          .single();
+        return {
+          data,
+          error: error
+            ? { code: (error as { code?: string }).code, message: error.message }
+            : null,
+        };
+      },
+      optionalExtras
+    );
 
     if (error || !updated) {
       return sendJsonError(res, 500, error?.message || "Update failed", "INTERNAL_SERVER_ERROR");

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useDoctorPortal } from "@/context/DoctorPortalContext";
 import { useAdminAuth } from "@/context/AdminAuthContext";
+import type { Letterhead } from "@/context/ClinicContext";
 import QueueList from "@/components/QueueList";
 import ActivePatientPanel from "@/components/ActivePatientPanel";
 import PrescriptionCanvas from "@/components/PrescriptionCanvas";
@@ -41,6 +42,7 @@ export default function DoctorConsultationPage() {
     setVoiceSession,
     voiceTranscript,
     voiceEnglishPhrase,
+    refreshClinicLetterhead,
   } = useDoctorPortal();
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function DoctorConsultationPage() {
 
   const existsInQueue = useMemo(() => rows.some((r) => r.appointmentId === appointmentId), [rows, appointmentId]);
 
-  const buildPrescriptionHtml = () => {
+  const buildPrescriptionHtml = (letterheadOverride?: Letterhead | null) => {
     const patientName = activePatient?.name || "Patient";
     const patientPhone = activePatient?.phone || "—";
     const patientAge = activePatient?.age ? `${activePatient.age}` : "—";
@@ -70,7 +72,7 @@ export default function DoctorConsultationPage() {
     const notes = prescriptionNotes || "—";
     const summary = voiceEnglishPhrase?.trim() || "";
     return buildPrescriptionLetterheadHtml({
-      clinicLetterhead,
+      clinicLetterhead: letterheadOverride === undefined ? clinicLetterhead : letterheadOverride,
       fieldMap: clinicLetterheadFieldMap,
       clinicMeta,
       patient: {
@@ -89,8 +91,36 @@ export default function DoctorConsultationPage() {
     });
   };
 
-  const handlePrintPrescription = () => {
-    const html = buildPrescriptionHtml();
+  const toDataUrl = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const buildPrescriptionHtmlForOutput = async () => {
+    const latestLetterhead = await refreshClinicLetterhead();
+    const source = latestLetterhead ?? clinicLetterhead;
+    if (!source?.templateUrl || String(source.mime || "").toLowerCase().includes("pdf")) {
+      return buildPrescriptionHtml(source);
+    }
+    const embeddedUrl = await toDataUrl(source.templateUrl);
+    return buildPrescriptionHtml(
+      embeddedUrl ? { ...source, templateUrl: embeddedUrl } : source
+    );
+  };
+
+  const handlePrintPrescription = async () => {
+    const html = await buildPrescriptionHtmlForOutput();
     const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
     if (!win) return;
     win.document.write(html);
@@ -99,8 +129,8 @@ export default function DoctorConsultationPage() {
     win.print();
   };
 
-  const handleExportPrescriptionHtml = () => {
-    const html = buildPrescriptionHtml();
+  const handleExportPrescriptionHtml = async () => {
+    const html = await buildPrescriptionHtmlForOutput();
     const safeName = (activePatient?.name || "patient").replace(/[^a-z0-9_-]+/gi, "_");
     const dateToken = new Date().toISOString().slice(0, 10);
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
@@ -122,7 +152,7 @@ export default function DoctorConsultationPage() {
     }
     setAttachingReport(true);
     try {
-      const html = buildPrescriptionHtml();
+      const html = await buildPrescriptionHtmlForOutput();
       const safeName = (activePatient.name || "patient").replace(/[^a-z0-9_-]+/gi, "_");
       const dateToken = new Date().toISOString().slice(0, 10);
       const file = new File([html], `prescription_${safeName}_${dateToken}.html`, {
@@ -250,7 +280,7 @@ export default function DoctorConsultationPage() {
           <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               type="button"
-              onClick={handlePrintPrescription}
+              onClick={() => void handlePrintPrescription()}
               className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors"
             >
               <Printer className="w-5 h-5" />
@@ -258,7 +288,7 @@ export default function DoctorConsultationPage() {
             </button>
             <button
               type="button"
-              onClick={handleExportPrescriptionHtml}
+              onClick={() => void handleExportPrescriptionHtml()}
               className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors"
             >
               <Download className="w-5 h-5" />

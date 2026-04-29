@@ -191,9 +191,13 @@ export class OtpAuthService {
     const email = contactType === "email" ? contact : null;
     const phone = contactType === "phone" ? contact : null;
 
+    // Tolerate duplicate rows that match the same contact: prefer the newest active row.
     let userQuery = supabase.from("users").select("*");
     userQuery = email ? userQuery.eq("email", email) : userQuery.eq("phone", phone);
-    const { data: existingUser } = await userQuery.single();
+    const { data: existingRows } = await userQuery
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const existingUser = Array.isArray(existingRows) ? existingRows[0] ?? null : null;
 
     let user = existingUser;
     if (!user) {
@@ -238,7 +242,9 @@ export class OtpAuthService {
         id: user.id,
         contact,
         contactType,
-        role: "doctor",
+        // Always reflect the real DB role; previously hardcoded to "doctor" which
+        // misled the client into showing the wrong portal for non-doctor accounts.
+        role: user.role,
         clinicId: user.clinic_id ?? undefined,
         doctorId: undefined,
         name: user.name,

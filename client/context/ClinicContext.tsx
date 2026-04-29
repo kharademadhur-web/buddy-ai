@@ -1,20 +1,10 @@
 import React, { createContext, useContext, useState } from "react";
+import type { ClinicLetterheadDTO } from "@shared/api";
 
 export type UserRole = "doctor" | "reception" | "admin" | "solo-doctor";
 
-export interface Letterhead {
-  id: string;
-  name: string;
-  templateUrl: string;
-  mime?: string;
-  clinicName: string;
-  clinicAddress: string;
-  clinicPhone: string;
-  doctorName?: string;
-  registrationNumber?: string;
-  specialization?: string;
+export interface Letterhead extends Omit<ClinicLetterheadDTO, "createdAt"> {
   createdAt: Date;
-  isDefault?: boolean;
 }
 
 /** UI model for queue / panels (backed by API data in dashboards). */
@@ -22,6 +12,8 @@ export interface Patient {
   id: string;
   name: string;
   age: number;
+  /** Surfaced from PatientDTO.gender so the consultation header can show it. */
+  gender?: string | null;
   phone: string;
   symptoms: string;
   token: number;

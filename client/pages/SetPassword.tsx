@@ -56,13 +56,20 @@ export function SetPassword() {
     setIsLoading(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const response = await fetch("/api/auth/first-login", {
+      const sessionId = sessionStorage.getItem("otpSessionId");
+      const accessToken = sessionStorage.getItem("accessToken");
+      if (!sessionId || !accessToken) {
+        throw new Error("OTP session expired. Please verify again.");
+      }
+
+      const response = await fetch("/api/auth/password-change/complete", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          userId,
+          sessionId,
           otp,
           newPassword: data.newPassword,
           deviceId,

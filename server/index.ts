@@ -29,6 +29,7 @@ import aiClinicalRoutes from "./routes/ai-clinical";
 import messagingWhatsappRoutes from "./routes/messaging-whatsapp";
 import medicinesRoutes from "./routes/medicines";
 import followupsV2Routes from "./routes/followups-v2";
+import notificationsRoutes from "./routes/notifications";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -44,8 +45,59 @@ function isLocalhostOrigin(origin: string): boolean {
   }
 }
 
+function hasEnv(name: string): boolean {
+  return Boolean(process.env[name]?.trim());
+}
+
+function serviceLine(label: string, configured: boolean, optional = false): string {
+  const icon = configured ? "✅" : optional ? "⚠️" : "❌";
+  return `${icon} ${label}: ${configured ? "configured" : optional ? "not configured (optional)" : "not configured"}`;
+}
+
+function logStartupServiceConfiguration(): void {
+  const whatsappProvider = (process.env.WHATSAPP_PROVIDER || "").trim().toLowerCase();
+  const whatsappConfigured =
+    whatsappProvider === "meta"
+      ? hasEnv("WHATSAPP_ACCESS_TOKEN") && hasEnv("WHATSAPP_PHONE_NUMBER_ID")
+      : hasEnv("TWILIO_ACCOUNT_SID") && hasEnv("TWILIO_AUTH_TOKEN") && hasEnv("TWILIO_WHATSAPP_FROM");
+
+  const emailProvider = (process.env.EMAIL_PROVIDER || "").trim().toLowerCase();
+  const emailConfigured =
+    emailProvider === "sendgrid"
+      ? hasEnv("SENDGRID_API_KEY")
+      : emailProvider === "resend"
+        ? hasEnv("RESEND_API_KEY")
+        : hasEnv("SMTP_HOST") && hasEnv("SMTP_PORT") && hasEnv("SMTP_USER") && hasEnv("SMTP_PASS");
+
+  const smsProvider = (process.env.SMS_PROVIDER || "").trim().toLowerCase();
+  const smsConfigured =
+    smsProvider === "twilio"
+      ? hasEnv("TWILIO_ACCOUNT_SID") && hasEnv("TWILIO_AUTH_TOKEN") && hasEnv("TWILIO_SMS_FROM")
+      : hasEnv("MSG91_API_KEY") && hasEnv("MSG91_SENDER_ID");
+
+  const razorpayConfigured = hasEnv("RAZORPAY_KEY_ID") && hasEnv("RAZORPAY_KEY_SECRET");
+
+  const ocrProvider = (process.env.AI_OCR_PROVIDER || "").trim().toLowerCase();
+  const aiOcrConfigured =
+    ocrProvider === "google"
+      ? hasEnv("GOOGLE_VISION_API_KEY")
+      : ocrProvider === "azure"
+        ? hasEnv("AZURE_VISION_ENDPOINT") && hasEnv("AZURE_VISION_KEY")
+        : ocrProvider === "openai"
+          ? hasEnv("OPENAI_API_KEY")
+          : hasEnv("ANTHROPIC_API_KEY") || hasEnv("OPENAI_API_KEY") || hasEnv("XAI_API_KEY");
+
+  console.log("[config] Service configuration:");
+  console.log(serviceLine("WhatsApp", whatsappConfigured));
+  console.log(serviceLine("Email", emailConfigured));
+  console.log(serviceLine("SMS", smsConfigured, true));
+  console.log(serviceLine("Razorpay", razorpayConfigured));
+  console.log(serviceLine("AI/OCR", aiOcrConfigured));
+}
+
 export async function createServer() {
   const app = express();
+  logStartupServiceConfiguration();
 
   if (process.env.NODE_ENV === "production") {
     app.set("trust proxy", 1);
@@ -193,6 +245,7 @@ export async function createServer() {
   app.use("/api/messaging", requireActiveClinicSubscription, messagingWhatsappRoutes);
   app.use("/api/medicines", requireActiveClinicSubscription, medicinesRoutes);
   app.use("/api/followups", requireActiveClinicSubscription, followupsV2Routes);
+  app.use("/api/notifications", notificationsRoutes);
 
   // =====================
   // Device Approval Routes

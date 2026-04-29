@@ -4,10 +4,13 @@ import { Users, TrendingUp } from "lucide-react";
 
 export default function ReceptionOverviewPage() {
   const { user } = useAdminAuth();
-  const { clinicId, queue, summary, paymentQrUrl, onlineDoctors, offlineDoctors, error } = useReceptionPortal();
+  const { clinicId, queue, loading, summary, summaryLoading, paymentQrUrl, onlineDoctors, offlineDoctors, error } =
+    useReceptionPortal();
 
   const completedToday = summary?.completedToday ?? 0;
   const totalCollected = summary?.totalCollected ?? 0;
+  const kpiText = (isLoading: boolean, value: string | number) =>
+    isLoading ? <span className="text-2xl text-gray-400">Loading...</span> : value;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -41,7 +44,7 @@ export default function ReceptionOverviewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Patients in Queue</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{queue.length}</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{kpiText(loading, queue.length)}</p>
             </div>
             <Users className="w-12 h-12 text-blue-600 opacity-10" />
           </div>
@@ -51,7 +54,7 @@ export default function ReceptionOverviewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Completed Today</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{completedToday}</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{kpiText(summaryLoading, completedToday)}</p>
             </div>
             <TrendingUp className="w-12 h-12 text-green-600 opacity-10" />
           </div>
@@ -61,7 +64,9 @@ export default function ReceptionOverviewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Collected Today (paid)</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">₹{totalCollected}</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">
+                {kpiText(summaryLoading, `₹${totalCollected}`)}
+              </p>
             </div>
             <TrendingUp className="w-12 h-12 text-green-600 opacity-10" />
           </div>

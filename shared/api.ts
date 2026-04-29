@@ -27,6 +27,44 @@ export type AppointmentStatus =
 
 export type PaymentStatus = "pending" | "paid" | "failed" | "cancelled";
 export type PaymentMethod = "cash" | "upi" | "card" | "other";
+export type AuthRole =
+  | "super-admin"
+  | "clinic-admin"
+  | "doctor"
+  | "receptionist"
+  | "independent";
+
+export interface AuthUserDTO {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: AuthRole;
+  clinic_id: string | null;
+  clinic_code?: string | null;
+}
+
+export interface AuthTokenPairResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+export interface ClinicLetterheadDTO {
+  id: string;
+  name: string;
+  templateUrl: string;
+  mime?: string;
+  clinicName: string;
+  clinicAddress: string;
+  clinicPhone: string;
+  doctorName?: string;
+  registrationNumber?: string;
+  specialization?: string;
+  createdAt?: string;
+  isDefault?: boolean;
+}
 
 /** Percent-based overlay boxes on clinic letterhead (0–100). Defined at onboarding; used by tablet + PDF. */
 export interface LetterheadFieldBox {

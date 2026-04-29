@@ -510,5 +510,151 @@ router.get(
   }
 );
 
+// ────────────────────────────────────────────────────────────
+// POST /api/consultations/close-day
+// Doctor closes the day — marks completed consultations as day_closed,
+// pending ones as incomplete, stores daily summary.
+// ────────────────────────────────────────────────────────────
+const closeDaySchema = z.object({
+  clinicId: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  completedIds: z.array(z.string()).default([]),
+  pendingIds: z.array(z.string()).default([]),
+});
+
+router.post(
+  "/close-day",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const parsed = closeDaySchema.safeParse(req.body);
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
+
+    const { clinicId, date, completedIds, pendingIds } = parsed.data;
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+    }
+
+    const supabase = getSupabaseClient();
+    const doctorId = req.user!.userId;
+
+    // Mark completed consultations as day_closed
+    if (completedIds.length > 0) {
+      await supabase
+        .from("consultations")
+        .update({ workflow_status: "day_closed", day_closed: true })
+        .in("id", completedIds)
+        .eq("clinic_id", clinicId);
+    }
+
+    // Mark pending ones as incomplete
+    if (pendingIds.length > 0) {
+      await supabase
+        .from("consultations")
+        .update({ workflow_status: "incomplete" })
+        .in("id", pendingIds)
+        .eq("clinic_id", clinicId);
+    }
+
+    // Count prescriptions for completed consultations today
+    const { count: rxCount } = await supabase
+      .from("prescriptions")
+      .select("id", { count: "exact", head: true })
+      .in("consultation_id", completedIds);
+
+    // Sum billing for today (best effort)
+    const { data: billRows } = await supabase
+      .from("bills")
+      .select("total_amount")
+      .in("consultation_id", completedIds)
+      .eq("payment_status", "paid");
+
+    const revenue = (billRows || []).reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0);
+
+    // Upsert daily summary
+    const { data: summary, error: summaryError } = await supabase
+      .from("daily_summaries")
+      .upsert(
+        {
+          doctor_id: doctorId,
+          clinic_id: clinicId,
+          summary_date: date,
+          total_seen: completedIds.length,
+          total_pending: pendingIds.length,
+          total_prescriptions: rxCount || 0,
+          revenue,
+          closed_at: new Date().toISOString(),
+        },
+        { onConflict: "doctor_id,summary_date" }
+      )
+      .select()
+      .single();
+
+    if (summaryError) {
+      console.warn("[close-day] daily_summaries upsert failed:", summaryError.message);
+    }
+
+    // Notify receptionist that doctor has closed the day
+    try {
+      await supabase.from("notifications").insert({
+        user_id: doctorId,
+        clinic_id: clinicId,
+        type: "day_closed",
+        title: "Day Closed",
+        message: `You have closed the day. ${completedIds.length} patients seen, ${pendingIds.length} pending.`,
+        data: { totalSeen: completedIds.length, totalPending: pendingIds.length, revenue, date },
+      });
+    } catch { /* non-critical */ }
+
+    return res.json({
+      success: true,
+      summary: {
+        totalSeen: completedIds.length,
+        totalPending: pendingIds.length,
+        totalPrescriptions: rxCount || 0,
+        revenue,
+        date,
+      },
+      dailySummary: summary || null,
+    });
+  }
+);
+
+// ────────────────────────────────────────────────────────────
+// GET /api/consultations/today-summary
+// Returns today's consultation stats for the close-day modal
+// ────────────────────────────────────────────────────────────
+router.get(
+  "/today-summary",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const clinicId = (req.query as { clinicId?: string }).clinicId || req.user?.clinicId;
+    const date = ((req.query as { date?: string }).date) || new Date().toISOString().slice(0, 10);
+
+    if (!clinicId) return sendJsonError(res, 400, "clinicId required", "VALIDATION_ERROR");
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== clinicId) {
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+    }
+
+    const supabase = getSupabaseClient();
+    const doctorId = req.user!.userId;
+
+    const startOfDay = `${date}T00:00:00.000Z`;
+    const endOfDay = `${date}T23:59:59.999Z`;
+
+    const { data: consultations } = await supabase
+      .from("consultations")
+      .select("id, workflow_status, appointments!inner(patient_id, check_in_time, patients(name, phone))")
+      .eq("clinic_id", clinicId)
+      .eq("doctor_id", doctorId)
+      .gte("created_at", startOfDay)
+      .lte("created_at", endOfDay)
+      .not("workflow_status", "eq", "day_closed");
+
+    return res.json({ success: true, consultations: consultations || [], date });
+  }
+);
+
 export default router;
 

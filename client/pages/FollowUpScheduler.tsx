@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAdminAuth } from "@/context/AdminAuthContext";
 import {
   Calendar,
   Clock,
@@ -17,7 +17,7 @@ import {
   Edit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/api-base";
+import { apiErrorMessage, apiFetch } from "@/lib/api-base";
 
 interface FollowUp {
   id: string;
@@ -41,7 +41,8 @@ interface FollowUpFormData {
 }
 
 export default function FollowUpScheduler() {
-  const { user } = useAuth();
+  const { user } = useAdminAuth();
+  const currentClinicId = user?.clinic_id ?? "";
   const [upcomingFollowUps, setUpcomingFollowUps] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,8 +52,8 @@ export default function FollowUpScheduler() {
 
   const [formData, setFormData] = useState<FollowUpFormData>({
     patientId: "",
-    doctorId: "",
-    clinicId: sessionStorage.getItem("clinicId") || "",
+    doctorId: user?.id ?? "",
+    clinicId: currentClinicId,
     scheduledDate: "",
     scheduledTime: "10:00",
     notes: "",
@@ -62,22 +63,27 @@ export default function FollowUpScheduler() {
 
   useEffect(() => {
     fetchUpcomingFollowUps();
-  }, []);
+  }, [currentClinicId]);
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      clinicId: currentClinicId,
+      doctorId: prev.doctorId || user?.id || "",
+    }));
+  }, [currentClinicId, user?.id]);
 
   const fetchUpcomingFollowUps = async () => {
     try {
-      const token = sessionStorage.getItem("accessToken");
-      if (!token) return;
+      if (!currentClinicId) return;
 
-      const response = await fetch(apiUrl("/api/followups/upcoming"), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
+      const qs = new URLSearchParams({ clinicId: currentClinicId });
+      const response = await apiFetch(`/api/followups/upcoming?${qs.toString()}`);
+      const data = await response.json().catch(() => ({}));
       if (data.success) {
         setUpcomingFollowUps(data.followUps);
+      } else if (!response.ok) {
+        setError(apiErrorMessage(data) || "Failed to load follow-ups");
       }
     } catch (err) {
       console.error("Failed to fetch follow-ups:", err);
@@ -88,7 +94,10 @@ export default function FollowUpScheduler() {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "reminderMinutesBefore" ? Number(value) : value,
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,11 +106,7 @@ export default function FollowUpScheduler() {
     setError(null);
 
     try {
-      const token = sessionStorage.getItem("accessToken");
-      if (!token) {
-        setError("Authentication required");
-        return;
-      }
+      if (!currentClinicId) throw new Error("Clinic is required");
 
       if (!formData.patientId.trim()) {
         setError("Patient ID is required");
@@ -129,17 +134,14 @@ export default function FollowUpScheduler() {
         parseInt(minutes)
       ).toISOString();
 
-      const endpoint = editingId
-        ? apiUrl(`/api/followups/${editingId}`)
-        : apiUrl("/api/followups/schedule");
+      const endpoint = editingId ? `/api/followups/${editingId}` : "/api/followups/schedule";
 
       const method = editingId ? "PUT" : "POST";
 
-      const response = await fetch(endpoint, {
+      const response = await apiFetch(endpoint, {
         method,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           patientId: formData.patientId,
@@ -152,7 +154,7 @@ export default function FollowUpScheduler() {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (data.success) {
         setSuccessMessage(
           editingId ? "Follow-up updated successfully" : "Follow-up scheduled successfully"
@@ -161,8 +163,8 @@ export default function FollowUpScheduler() {
         setEditingId(null);
         setFormData({
           patientId: "",
-          doctorId: "",
-          clinicId: sessionStorage.getItem("clinicId") || "",
+          doctorId: user?.id ?? "",
+          clinicId: currentClinicId,
           scheduledDate: "",
           scheduledTime: "10:00",
           notes: "",
@@ -172,7 +174,7 @@ export default function FollowUpScheduler() {
         fetchUpcomingFollowUps();
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
-        setError(data.message || "Failed to schedule follow-up");
+        setError(apiErrorMessage(data) || "Failed to schedule follow-up");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to schedule follow-up");
@@ -191,7 +193,7 @@ export default function FollowUpScheduler() {
     setFormData({
       patientId: followUp.patientId,
       doctorId: followUp.doctorId,
-      clinicId: sessionStorage.getItem("clinicId") || "",
+      clinicId: currentClinicId,
       scheduledDate: dateStr,
       scheduledTime: timeStr,
       notes: followUp.notes,
@@ -204,20 +206,11 @@ export default function FollowUpScheduler() {
 
   const handleCompleteFollowUp = async (followUpId: string) => {
     try {
-      const token = sessionStorage.getItem("accessToken");
-      if (!token) {
-        setError("Authentication required");
-        return;
-      }
-
-      const response = await fetch(apiUrl(`/api/followups/${followUpId}/complete`), {
+      const response = await apiFetch(`/api/followups/${followUpId}/complete`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (data.success) {
         setSuccessMessage("Follow-up marked as completed");
         fetchUpcomingFollowUps();
@@ -256,8 +249,8 @@ export default function FollowUpScheduler() {
               setEditingId(null);
               setFormData({
                 patientId: "",
-                doctorId: "",
-                clinicId: sessionStorage.getItem("clinicId") || "",
+                doctorId: user?.id ?? "",
+                clinicId: currentClinicId,
                 scheduledDate: "",
                 scheduledTime: "10:00",
                 notes: "",

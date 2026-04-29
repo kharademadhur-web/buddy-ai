@@ -6,6 +6,8 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { rateLimit } from "../middleware/rate-limit.middleware";
 import { asyncHandler, ValidationError } from "../middleware/error-handler.middleware";
 import { sendJsonError } from "../lib/send-json-error";
+import { generateTokens } from "../config/jwt";
+import DeviceApprovalService from "../services/device-approval.service";
 
 const router = Router();
 
@@ -91,8 +93,29 @@ router.post(
     });
 
     if (!result.success) {
-      const maybeDebug = (result as { debug?: unknown }).debug;
-      const msg = typeof result.error === "string" ? result.error : "Login failed";
+      const r = result as {
+        debug?: unknown;
+        requiresDeviceApproval?: boolean;
+        approvalRequestId?: string;
+        userId?: string;
+        userDisplayName?: string;
+        error?: string;
+      };
+      const maybeDebug = r.debug;
+      const msg = typeof r.error === "string" ? r.error : "Login failed";
+
+      // Device approval required — surface structured info for the waiting UI
+      if (r.requiresDeviceApproval) {
+        return res.status(403).json({
+          success: false,
+          requiresDeviceApproval: true,
+          approvalRequestId: r.approvalRequestId,
+          userId: r.userId,
+          userDisplayName: r.userDisplayName,
+          error: { message: msg, code: "DEVICE_APPROVAL_REQUIRED", status: 403 },
+        });
+      }
+
       if (process.env.NODE_ENV !== "production" && maybeDebug) {
         return res.status(401).json({
           error: { message: msg, code: "UNAUTHORIZED", status: 401 },
@@ -132,6 +155,8 @@ router.post(
     res.json({
       success: true,
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
     });
   })
 );
@@ -299,6 +324,105 @@ router.post(
     }
 
     res.json({ success: true, message: "Password updated successfully" });
+  })
+);
+
+/**
+ * GET /api/auth/device-approval-status
+ * Polling endpoint for the "waiting for approval" screen.
+ * When approved, generates and returns JWT tokens so the client can auto-login.
+ * Query params: requestId, userId
+ */
+router.get(
+  "/device-approval-status",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { requestId, userId } = req.query as { requestId?: string; userId?: string };
+    if (!requestId || !userId) {
+      throw new ValidationError("requestId and userId are required");
+    }
+
+    const supabase = getSupabaseClient();
+
+    // Fetch the approval request and verify it belongs to this userId
+    const { data: request, error: reqErr } = await supabase
+      .from("device_approval_requests")
+      .select("id, user_id, new_device_id, status")
+      .eq("id", requestId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (reqErr) {
+      return sendJsonError(res, 500, reqErr.message, "INTERNAL_SERVER_ERROR");
+    }
+    if (!request) {
+      return sendJsonError(res, 404, "Approval request not found", "NOT_FOUND");
+    }
+
+    if (request.status === "rejected") {
+      return res.json({ success: true, status: "rejected" });
+    }
+
+    if (request.status === "pending") {
+      return res.json({ success: true, status: "pending" });
+    }
+
+    if (request.status === "approved") {
+      // Generate tokens for this user (device is now registered)
+      const { data: user, error: userErr } = await supabase
+        .from("users")
+        .select("id, user_id, name, email, phone, role, clinic_id, is_active")
+        .eq("id", userId)
+        .single();
+
+      if (userErr || !user) {
+        return sendJsonError(res, 404, "User not found", "NOT_FOUND");
+      }
+      if (!user.is_active) {
+        return sendJsonError(res, 403, "User account is inactive", "FORBIDDEN");
+      }
+
+      let clinic_code: string | null = null;
+      if (user.clinic_id) {
+        const { data: clinicMeta } = await supabase
+          .from("clinics")
+          .select("clinic_code")
+          .eq("id", user.clinic_id)
+          .maybeSingle();
+        clinic_code = (clinicMeta as { clinic_code?: string } | null)?.clinic_code ?? null;
+      }
+
+      const tokens = generateTokens({
+        userId: user.id,
+        user_id: user.user_id,
+        name: user.name,
+        role: user.role,
+        email: user.email || undefined,
+        phone: user.phone || undefined,
+        clinicId: user.clinic_id || undefined,
+      });
+
+      return res.json({
+        success: true,
+        status: "approved",
+        data: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+          user: {
+            id: user.id,
+            user_id: user.user_id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            clinic_id: user.clinic_id,
+            clinic_code,
+          },
+        },
+      });
+    }
+
+    return res.json({ success: true, status: request.status });
   })
 );
 

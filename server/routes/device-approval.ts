@@ -10,6 +10,7 @@ import {
 } from "../middleware/error-handler.middleware";
 import DeviceApprovalService from "../services/device-approval.service";
 import { sendJsonError } from "../lib/send-json-error";
+import { createNotification } from "../services/app-notifications.service";
 
 const router = Router();
 
@@ -135,6 +136,17 @@ router.post(
     if (!success) {
       return sendJsonError(res, 400, "Failed to approve device", "VALIDATION_ERROR");
     }
+
+    // Push an in-app notification so the waiting screen can also pick it up
+    try {
+      await createNotification({
+        userId: row.user_id,
+        type: "device_approved",
+        title: "Device Approved",
+        message: "Your device has been approved. You can now log in.",
+        data: { requestId },
+      });
+    } catch { /* non-critical */ }
 
     res.json({
       success: true,

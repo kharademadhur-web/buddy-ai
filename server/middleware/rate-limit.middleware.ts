@@ -117,13 +117,16 @@ export async function recordFailedLoginAttempt(
   const supabase = getSupabaseClient();
 
   try {
-    // Get user
-    const { data: user, error: userError } = await supabase
+    // Use limit(1) instead of .single() to tolerate duplicate user_id rows that exist
+    // in some legacy seeds. We sort by created_at desc so the freshest row wins.
+    const { data: rows, error: userError } = await supabase
       .from("users")
       .select("id, login_attempts")
       .eq("user_id", user_id)
-      .single();
+      .order("created_at", { ascending: false })
+      .limit(1);
 
+    const user = Array.isArray(rows) ? rows[0] ?? null : null;
     if (userError || !user) {
       return;
     }
@@ -187,12 +190,14 @@ export async function isUserRateLimited(user_id: string): Promise<boolean> {
   const supabase = getSupabaseClient();
 
   try {
-    const { data: user, error } = await supabase
+    const { data: rows, error } = await supabase
       .from("users")
       .select("locked_at")
       .eq("user_id", user_id)
-      .single();
+      .order("created_at", { ascending: false })
+      .limit(1);
 
+    const user = Array.isArray(rows) ? rows[0] ?? null : null;
     if (error || !user) {
       return false;
     }

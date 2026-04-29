@@ -156,15 +156,32 @@ export async function sendWhatsAppMessage(
       };
     }
 
+    // No real provider configured. Previously this returned `success: true`
+    // with status "mock", which made callers (and any UI / API responses they
+    // surface) believe a WhatsApp message was actually delivered. That is
+    // dangerously misleading in production. We now return `success: false`
+    // so callers can clearly distinguish "delivered" from "not configured",
+    // while keeping a permissive opt-in for development noise.
+    const allowMock = process.env.WHATSAPP_ALLOW_MOCK_SUCCESS === "true";
     console.log("🚀 [WhatsApp Mock] (configure TWILIO_* or WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID)");
     console.log(`   To: ${e164}`);
     console.log(`   Message: ${message.slice(0, 200)}${message.length > 200 ? "…" : ""}`);
 
     const messageId = `wh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    if (allowMock) {
+      return {
+        success: true,
+        messageId,
+        status: "mock",
+        timestamp: new Date(),
+      };
+    }
     return {
-      success: true,
+      success: false,
       messageId,
       status: "mock",
+      error:
+        "WhatsApp provider not configured. Set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_WHATSAPP_FROM, or WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID. Set WHATSAPP_ALLOW_MOCK_SUCCESS=true to silence this in dev.",
       timestamp: new Date(),
     };
   } catch (error) {

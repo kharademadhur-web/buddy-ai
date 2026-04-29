@@ -3,11 +3,20 @@ import multer from "multer";
 import { asyncHandler, ValidationError } from "../middleware/error-handler.middleware";
 import { sendJsonError } from "../lib/send-json-error";
 import { authMiddleware } from "../middleware/auth-jwt.middleware";
+import { requireRole } from "../middleware/rbac.middleware";
 import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import SupabaseStorageService from "../services/supabase-storage.service";
 
 const router = Router();
+
+const REPORT_UPLOAD_ROLES = [
+  "doctor",
+  "independent",
+  "receptionist",
+  "clinic-admin",
+  "super-admin",
+] as const;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,6 +49,7 @@ function safePathSegment(value: string) {
 router.post(
   "/report",
   authMiddleware,
+  requireRole(...REPORT_UPLOAD_ROLES),
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
     const file = req.file;
@@ -153,7 +163,19 @@ router.get(
 
 /**
  * GET /api/uploads/signed-url?bucket=reports&path=...
- * Returns a signed URL for the given bucket/path (authenticated).
+ * Returns a signed URL for the given bucket/path.
+ *
+ * Authorization rules (closed by default):
+ *  - super-admin can sign any path.
+ *  - All other authenticated roles may only sign paths whose first segment matches
+ *    their JWT clinicId. This prevents IDOR / cross-clinic access by guessing paths.
+ *  - Path traversal segments ("..") are rejected.
+ *
+ * Additionally, an authenticated user must be able to read the document row in
+ * `documents` table for paths that belong to a clinic they do not own — but since
+ * we already constrain by clinicId prefix, the simpler authorization above is
+ * sufficient for the current bucket layout (`<clinicId>/<userId>/<file>` for
+ * reports and `letterhead/<clinicId>/...` / `<clinicId>/...` for clinic assets).
  */
 router.get(
   "/signed-url",
@@ -163,6 +185,26 @@ router.get(
     const path = String(req.query.path || "").trim();
     if (!bucket) throw new ValidationError("bucket is required");
     if (!path) throw new ValidationError("path is required");
+    if (path.split("/").some((seg) => seg === "..")) {
+      return sendJsonError(res, 400, "Invalid path", "VALIDATION_ERROR");
+    }
+
+    if (req.user?.role !== "super-admin") {
+      const clinicId = req.user?.clinicId;
+      if (!clinicId) {
+        return sendJsonError(res, 403, "Clinic access required", "FORBIDDEN");
+      }
+      // Accept both layouts: "<clinicId>/..." and "letterhead/<clinicId>/..."
+      const segments = path.split("/").filter(Boolean);
+      const firstSeg = segments[0] ?? "";
+      const secondSeg = segments[1] ?? "";
+      const matchesDirect = firstSeg === clinicId;
+      const matchesPrefixed =
+        ["letterhead", "payment_qr", "kyc"].includes(firstSeg) && secondSeg === clinicId;
+      if (!matchesDirect && !matchesPrefixed) {
+        return sendJsonError(res, 403, "Path not in your clinic scope", "FORBIDDEN");
+      }
+    }
 
     const signedUrl = await SupabaseStorageService.getSignedUrl(bucket, path);
     res.json({ success: true, signedUrl });

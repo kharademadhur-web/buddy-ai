@@ -8,6 +8,7 @@ import DoctorPrescriptionsPage from "@/pages/doctor/DoctorPrescriptionsPage";
 import DoctorReportsPage from "@/pages/doctor/DoctorReportsPage";
 import DoctorAnalyticsPage from "@/pages/doctor/DoctorAnalyticsPage";
 import DoctorSettingsPage from "@/pages/doctor/DoctorSettingsPage";
+import FollowUpScheduler from "@/pages/FollowUpScheduler";
 
 export default function DoctorDashboard() {
   return (
@@ -19,6 +20,7 @@ export default function DoctorDashboard() {
           <Route path="queue/:appointmentId" element={<DoctorConsultationPage />} />
           <Route path="reports" element={<DoctorReportsPage />} />
           <Route path="prescriptions" element={<DoctorPrescriptionsPage />} />
+          <Route path="follow-ups" element={<FollowUpScheduler />} />
           <Route path="analytics" element={<DoctorAnalyticsPage />} />
           <Route path="settings" element={<DoctorSettingsPage />} />
           <Route path="*" element={<Navigate to="/doctor-dashboard" replace />} />

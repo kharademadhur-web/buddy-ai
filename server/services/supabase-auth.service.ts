@@ -79,7 +79,15 @@ export class SupabaseAuthService {
    */
   static async login(
     request: LoginRequest
-  ): Promise<{ success: boolean; data?: LoginResponse; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    data?: LoginResponse;
+    error?: string;
+    requiresDeviceApproval?: boolean;
+    approvalRequestId?: string;
+    userId?: string;
+    userDisplayName?: string;
+  }> {
     const supabase = getSupabaseClient();
     const { user_id, password, deviceId, clientIp, userAgent } = request;
 
@@ -222,8 +230,12 @@ export class SupabaseAuthService {
           }
           return {
             success: false,
+            requiresDeviceApproval: true,
+            approvalRequestId: approval.request.id,
+            userId: user.id,
+            userDisplayName: user.name,
             error:
-              "Device approval required. A pending request is registered — ask your clinic or platform admin to approve this device in Device Approvals.",
+              "Device approval required. A pending request is registered — waiting for admin approval.",
           };
         }
 
@@ -297,23 +309,35 @@ export class SupabaseAuthService {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token.
+   *
+   * Returns a NEW refresh token alongside the new access token (rotation).
+   * Rotation reduces the blast radius if an attacker steals a refresh token —
+   * the legitimate client immediately invalidates the stolen one on its next
+   * refresh by issuing a fresh pair.
    */
   static async refreshAccessToken(
     refreshToken: string
-  ): Promise<{ success: boolean; accessToken?: string; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    accessToken?: string;
+    refreshToken?: string;
+    expiresIn?: number;
+    error?: string;
+  }> {
     try {
-      // Verify refresh token
       const payload = verifyRefreshToken(refreshToken);
       if (!payload) {
         return { success: false, error: "Invalid or expired refresh token" };
       }
 
-      // Get user to verify they still exist and are active
+      // Get fresh user record so we re-issue tokens with current role / clinic
+      // bindings (a user could have been moved between clinics or their role
+      // changed since the refresh token was minted).
       const supabase = getSupabaseClient();
       const { data: user, error } = await supabase
         .from("users")
-        .select("id, is_active")
+        .select("id, user_id, name, email, phone, role, clinic_id, is_active")
         .eq("id", payload.userId)
         .single();
 
@@ -321,10 +345,24 @@ export class SupabaseAuthService {
         return { success: false, error: "User not found or inactive" };
       }
 
-      // Generate new access token (keep same payload)
-      const newAccessToken = generateTokens(payload).accessToken;
+      const freshPayload: JWTPayload = {
+        userId: user.id,
+        user_id: user.user_id,
+        name: user.name,
+        role: user.role,
+        email: user.email || undefined,
+        phone: user.phone || undefined,
+        clinicId: user.clinic_id || undefined,
+      };
 
-      return { success: true, accessToken: newAccessToken };
+      const tokens = generateTokens(freshPayload);
+
+      return {
+        success: true,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
     } catch (error) {
       console.error("Token refresh error:", error);
       return { success: false, error: "Token refresh failed" };

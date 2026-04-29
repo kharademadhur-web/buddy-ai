@@ -109,10 +109,13 @@ export async function validateDevice(
     };
   } catch (error) {
     console.error("Device validation error:", error);
+    // Fail-closed: an unexpected DB/RLS error must NOT silently allow the user to proceed
+    // to token issuance. Treat the device as un-approved so login is blocked or the
+    // approval flow is triggered, and the actual error is logged for ops.
     return {
       valid: false,
-      requiresApproval: false,
-      reason: "Validation error",
+      requiresApproval: true,
+      reason: "validation_error",
     };
   }
 }
