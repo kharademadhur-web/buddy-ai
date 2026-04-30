@@ -5,6 +5,8 @@ import ReportViewerModal from "./ReportViewerModal";
 import { DiagnosticReport } from "@/context/ClinicContext";
 import { toast } from "sonner";
 import { apiFetch, apiErrorMessage } from "@/lib/api-base";
+import { FileText } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ReportsTabProps {
   patientId: string;
@@ -85,11 +87,20 @@ export default function ReportsTab({ patientId, patientName, clinicId, reloadKey
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <ReportUploadCard patientId={patientId} onUpload={handleUpload} />
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading reports…</p>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <Skeleton className="mb-3 h-5 w-40" />
+          <Skeleton className="h-16 rounded-2xl" />
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+          <FileText className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+          <p className="font-semibold text-text-primary">No reports uploaded yet</p>
+          <p className="text-sm text-text-secondary">Diagnostic documents for {patientName} will appear here.</p>
+        </div>
       ) : (
         <ReportList
           reports={reports}

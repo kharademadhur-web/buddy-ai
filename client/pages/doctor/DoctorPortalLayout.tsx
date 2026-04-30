@@ -48,35 +48,35 @@ export default function DoctorPortalLayout() {
     <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
       <DoctorHashRedirect />
 
-      {/* Sidebar: hidden on mobile, shown on tablet+ */}
+      {/* Sidebar visible on tablet/desktop only */}
       <Sidebar role="doctor" queueCount={rows.length} />
 
       {/* Main content area */}
-      <div
-        className="flex-1 flex flex-col overflow-hidden min-h-0 w-full min-w-0 pt-14 md:pt-0"
-        style={{
-          // Account for top status bar on Android
-          paddingTop: `max(env(safe-area-inset-top), 56px)`,
-        }}
-      >
-        <div className="hidden md:block">
-          <DoctorAvailabilityBar />
-        </div>
-        <div className="md:hidden">
-          <DoctorAvailabilityBar />
-        </div>
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 w-full min-w-0">
+        {/* Mobile top bar offset (h-14 = 56px) + Android status bar */}
+        <div
+          className="md:hidden"
+          style={{ height: "calc(56px + env(safe-area-inset-top))" }}
+          aria-hidden
+        />
 
-        {/* Scrollable content — add bottom padding on mobile so bottom nav doesn't cover content */}
+        <DoctorAvailabilityBar />
+
+        {/* Scrollable content — reserve space for bottom nav on mobile */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto min-h-0 pb-[env(safe-area-inset-bottom)]"
-          style={{ paddingBottom: keyboardVisible ? 0 : "calc(64px + env(safe-area-inset-bottom))" }}
+          className="flex-1 overflow-y-auto min-h-0"
+          style={{
+            paddingBottom: keyboardVisible
+              ? 0
+              : "calc(64px + env(safe-area-inset-bottom))",
+          }}
         >
           <Outlet />
         </div>
       </div>
 
-      {/* Mobile bottom navigation */}
+      {/* Mobile bottom navigation bar */}
       <MobileBottomNav role="doctor" queueCount={rows.length} keyboardVisible={keyboardVisible} />
     </div>
   );

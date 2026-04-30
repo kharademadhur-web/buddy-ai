@@ -7,6 +7,7 @@ import { requireRole } from "../middleware/rbac.middleware";
 import { getSupabaseClient, getSupabaseRlsClient } from "../config/supabase";
 import { signSupabaseRlsJwt } from "../config/supabase-jwt";
 import SupabaseStorageService from "../services/supabase-storage.service";
+import { createNotification } from "../services/app-notifications.service";
 
 const router = Router();
 
@@ -101,6 +102,34 @@ router.post(
       // Best-effort cleanup if metadata insert fails
       await SupabaseStorageService.deleteDocument(uploaded.bucket, uploaded.path);
       throw new Error(`Failed to save document metadata: ${error.message}`);
+    }
+
+    if (patientId && req.user?.clinicId) {
+      const admin = getSupabaseClient();
+      const { data: activeAppointment } = await admin
+        .from("appointments")
+        .select("id, doctor_user_id")
+        .eq("clinic_id", req.user.clinicId)
+        .eq("patient_id", patientId)
+        .in("status", ["checked_in", "in_consultation"])
+        .order("appointment_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeAppointment?.doctor_user_id) {
+        void createNotification({
+          userId: activeAppointment.doctor_user_id,
+          clinicId: req.user.clinicId,
+          type: "report_uploaded",
+          title: "Diagnostic report uploaded",
+          message: "A new report was uploaded for your patient.",
+          data: {
+            patientId,
+            appointmentId: activeAppointment.id,
+            documentId: docRow.id,
+          },
+        });
+      }
     }
 
     res.status(201).json({

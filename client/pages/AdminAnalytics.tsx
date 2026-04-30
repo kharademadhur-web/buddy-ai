@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Loader2, TrendingUp, TrendingDown } from "lucide-react";
+import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LineChart,
   Line,
@@ -96,15 +97,23 @@ export default function AdminAnalytics() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="space-y-6 animate-fade-in">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-96 max-w-full" />
+        </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Skeleton className="h-36 rounded-2xl" />
+          <Skeleton className="h-36 rounded-2xl" />
+        </div>
+        <Skeleton className="h-96 rounded-2xl" />
       </div>
     );
   }
 
   if (error && !data) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
+      <div className="rounded-2xl border border-warning/25 bg-warning/10 p-4 text-sm text-text-primary">
         <p className="font-semibold">Note:</p>
         <p>{error}</p>
       </div>
@@ -112,62 +121,63 @@ export default function AdminAnalytics() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Revenue analytics</h2>
-        <p className="mt-1 text-sm text-gray-600">{scopedCopy}</p>
+        <h2 className="text-2xl font-bold text-text-primary">Revenue analytics</h2>
+        <p className="mt-1 text-sm text-text-secondary">{scopedCopy}</p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Total Revenue Card */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium mb-1">
+              <p className="mb-1 text-sm font-medium text-text-secondary">
                 Total Revenue Earned
               </p>
-              <h3 className="text-3xl font-bold text-gray-900">
+              <h3 className="animate-count-up text-3xl font-bold text-text-primary">
                 ₹{(data?.totalRevenue || 0).toLocaleString("en-IN")}
               </h3>
-              <p className="text-gray-500 text-sm mt-2">Paid bill totals (all time)</p>
+              <p className="mt-2 text-sm text-text-muted">Paid bill totals (all time)</p>
             </div>
-            <div className="bg-green-100 rounded-full p-4">
-              <TrendingUp className="w-8 h-8 text-green-600" />
+            <div className="rounded-2xl bg-success/10 p-4">
+              <TrendingUp className="h-8 w-8 text-success" />
             </div>
           </div>
         </div>
 
         {/* Total Pending Card */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium mb-1">
+              <p className="mb-1 text-sm font-medium text-text-secondary">
                 Total Pending Amount
               </p>
-              <h3 className="text-3xl font-bold text-gray-900">
+              <h3 className="animate-count-up text-3xl font-bold text-text-primary">
                 ₹{(data?.totalPending || 0).toLocaleString("en-IN")}
               </h3>
-              <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
+              <p className="mt-2 flex items-center gap-1 text-sm text-error">
                 <TrendingDown className="w-4 h-4" />
                 Needs attention
               </p>
             </div>
-            <div className="bg-red-100 rounded-full p-4">
-              <TrendingDown className="w-8 h-8 text-red-600" />
+            <div className="rounded-2xl bg-error/10 p-4">
+              <TrendingDown className="h-8 w-8 text-error" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Revenue Trend Chart */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Amount Paid - Monthly Trend
-        </h3>
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="rounded-2xl bg-primary/10 p-2"><BarChart3 className="h-5 w-5 text-primary" /></div>
+          <h3 className="text-lg font-semibold text-text-primary">Amount Paid - Monthly Trend</h3>
+        </div>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={data?.revenueTrend || []}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E9ECEF" />
             <XAxis
               dataKey="date"
               tick={{ fontSize: 12 }}
@@ -180,16 +190,16 @@ export default function AdminAnalytics() {
               formatter={(value) => `₹${value.toLocaleString("en-IN")}`}
               contentStyle={{
                 backgroundColor: "#fff",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
+                border: "1px solid #E9ECEF",
+                borderRadius: "16px",
               }}
             />
             <Legend />
             <Line
               type="monotone"
               dataKey="amount"
-              stroke="#10b981"
-              strokeWidth={2}
+              stroke="#2D6A4F"
+              strokeWidth={3}
               dot={{ r: 4 }}
               activeDot={{ r: 6 }}
               name="Amount Paid"
@@ -199,13 +209,14 @@ export default function AdminAnalytics() {
       </div>
 
       {/* Pending by Clinic Chart */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Amount Pending by Clinic
-        </h3>
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="rounded-2xl bg-error/10 p-2"><TrendingDown className="h-5 w-5 text-error" /></div>
+          <h3 className="text-lg font-semibold text-text-primary">Amount Pending by Clinic</h3>
+        </div>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data?.pendingByClinic || []}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E9ECEF" />
             <XAxis
               dataKey="clinicName"
               tick={{ fontSize: 12 }}
@@ -218,14 +229,14 @@ export default function AdminAnalytics() {
               formatter={(value) => `₹${value.toLocaleString("en-IN")}`}
               contentStyle={{
                 backgroundColor: "#fff",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
+                border: "1px solid #E9ECEF",
+                borderRadius: "16px",
               }}
             />
             <Legend />
             <Bar
               dataKey="amount"
-              fill="#ef4444"
+              fill="#FA5252"
               name="Pending Amount"
               radius={[8, 8, 0, 0]}
             />

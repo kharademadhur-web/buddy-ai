@@ -8,6 +8,10 @@ import { realtimeService } from "../services/realtime.service";
 import type { CompleteConsultationRequest, RealtimeEvent } from "@shared/api";
 import { sendJsonError } from "../lib/send-json-error";
 import { notifyFollowUpScheduled } from "../services/followup-notifications.service";
+import { sendWhatsAppMessage } from "../services/whatsapp.service";
+import { sendStaffEmail } from "../services/outbound-email.service";
+import { sendSms } from "../services/sms.service";
+import { createNotification } from "../services/app-notifications.service";
 
 const router = Router();
 
@@ -271,6 +275,43 @@ router.post(
       },
     };
     realtimeService.emit(event);
+
+    const adminClient = getSupabaseClient();
+    const { data: receptionists } = await adminClient
+      .from("users")
+      .select("id")
+      .eq("clinic_id", parsed.data.clinicId)
+      .eq("role", "receptionist")
+      .eq("is_active", true);
+
+    for (const receptionist of receptionists || []) {
+      void createNotification({
+        userId: receptionist.id,
+        clinicId: parsed.data.clinicId,
+        type: "consultation_completed",
+        title: "Consultation completed",
+        message: "A patient is ready for billing or discharge.",
+        data: {
+          appointmentId: parsed.data.appointmentId,
+          consultationId: consultationRes.data.id,
+          prescriptionId: rxRes.data.id,
+          patientId: parsed.data.patientId,
+        },
+      });
+    }
+
+    void createNotification({
+      userId: req.user!.userId,
+      clinicId: parsed.data.clinicId,
+      type: "prescription_saved",
+      title: "Prescription saved",
+      message: "Prescription saved successfully for this consultation.",
+      data: {
+        appointmentId: parsed.data.appointmentId,
+        consultationId: consultationRes.data.id,
+        prescriptionId: rxRes.data.id,
+      },
+    });
 
     return res.json({
       success: true,
@@ -653,6 +694,111 @@ router.get(
       .not("workflow_status", "eq", "day_closed");
 
     return res.json({ success: true, consultations: consultations || [], date });
+  }
+);
+
+// ────────────────────────────────────────────────────────────
+// POST /api/consultations/send-report
+// Stores the generated patient report in Supabase Storage and sends patient channels.
+// The frontend sends print-ready HTML; it is stored under report.pdf path for the
+// clinical workflow contract. A production PDF renderer can replace this without
+// changing the route contract.
+// ────────────────────────────────────────────────────────────
+const sendReportSchema = z.object({
+  clinicId: z.string().min(1),
+  patientId: z.string().min(1),
+  consultationId: z.string().optional(),
+  patientName: z.string().min(1),
+  patientPhone: z.string().optional(),
+  patientEmail: z.string().email().optional().or(z.literal("")),
+  doctorName: z.string().min(1),
+  clinicName: z.string().min(1),
+  summary: z.string().optional(),
+  html: z.string().min(100),
+});
+
+router.post(
+  "/send-report",
+  authMiddleware,
+  requireRole("doctor", "independent", "super-admin"),
+  async (req: Request, res: Response) => {
+    const parsed = sendReportSchema.safeParse(req.body);
+    if (!parsed.success) return sendJsonError(res, 400, "Invalid request body", "VALIDATION_ERROR");
+
+    const body = parsed.data;
+    if (req.user?.role !== "super-admin" && req.user?.clinicId !== body.clinicId) {
+      return sendJsonError(res, 403, "Clinic access denied", "FORBIDDEN");
+    }
+
+    const supabase = getSupabaseClient();
+    const consultationId = body.consultationId || `manual-${Date.now()}`;
+    const path = `patient-reports/${body.clinicId}/${body.patientId}/${consultationId}/report.pdf`;
+    const buffer = Buffer.from(body.html, "utf8");
+
+    const { error: uploadError } = await supabase.storage
+      .from("patient-reports")
+      .upload(path, buffer, {
+        contentType: "text/html; charset=utf-8",
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+    if (uploadError) return sendJsonError(res, 500, uploadError.message, "INTERNAL_SERVER_ERROR");
+
+    const { data: signed, error: signedError } = await supabase.storage
+      .from("patient-reports")
+      .createSignedUrl(path, 7 * 24 * 60 * 60);
+
+    if (signedError || !signed?.signedUrl) {
+      return sendJsonError(res, 500, signedError?.message || "Could not sign report URL", "INTERNAL_SERVER_ERROR");
+    }
+
+    if (body.consultationId) {
+      await supabase
+        .from("consultations")
+        .update({
+          report_url: signed.signedUrl,
+          report_url_expiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          ai_summary: body.summary || null,
+        })
+        .eq("id", body.consultationId);
+    }
+
+    const summary = body.summary || "Please follow your medicines as advised by your doctor.";
+    const delivery = {
+      whatsapp: false,
+      email: false,
+      sms: false,
+    };
+
+    if (body.patientPhone) {
+      const whatsappMessage = `Dear ${body.patientName}, your prescription from Dr. ${body.doctorName} at ${body.clinicName} is ready. Here are your health notes: ${summary}\n\nReport: ${signed.signedUrl}\nGet well soon.`;
+      const wa = await sendWhatsAppMessage(body.patientPhone, whatsappMessage);
+      delivery.whatsapp = wa.success;
+
+      const sms = await sendSms(
+        body.patientPhone,
+        `Hi ${body.patientName}, prescription from Dr.${body.doctorName} is ready. Follow medicines as advised. Report: ${signed.signedUrl} - ${body.clinicName}`
+      );
+      delivery.sms = sms.success;
+    }
+
+    if (body.patientEmail) {
+      const email = await sendStaffEmail({
+        to: body.patientEmail,
+        subject: `Your Health Report - ${body.clinicName}`,
+        text: `Dear ${body.patientName},\n\n${summary}\n\nYour report is available for 7 days:\n${signed.signedUrl}\n\nWishing you a speedy recovery.\n- Dr. ${body.doctorName}, ${body.clinicName}`,
+      });
+      delivery.email = email.ok;
+    }
+
+    return res.json({
+      success: true,
+      url: signed.signedUrl,
+      path,
+      delivery,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    });
   }
 );
 

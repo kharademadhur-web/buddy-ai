@@ -13,7 +13,10 @@ import AdminOnboarding from "./AdminOnboarding";
 import AdminKycReview from "./AdminKycReview";
 import AdminDeviceApprovals from "./AdminDeviceApprovals";
 import AdminClinicBilling from "./AdminClinicBilling";
+import AdminStaffRequests from "./AdminStaffRequests";
 import { useAdminAuth } from "@/context/AdminAuthContext";
+import NotificationCenter from "@/components/NotificationCenter";
+import { Search, UserCircle } from "lucide-react";
 
 function AdminOverviewGate() {
   const { user } = useAdminAuth();
@@ -40,12 +43,29 @@ function AdminDashboardLayout() {
     user?.role === "clinic-admin" ? "Clinic admin portal" : "Super admin portal";
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-surface md:flex-row">
       {/* Sidebar */}
       <Sidebar role="admin" />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto min-h-0 w-full min-w-0 pt-14 md:pt-0"><div className="p-4 sm:p-6 lg:p-8"><h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-8">{portalTitle}</h1>
+      <div className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto pt-14 md:pt-0">
+        <header className="sticky top-0 z-30 hidden h-16 items-center justify-between border-b border-border bg-card/90 px-6 backdrop-blur md:flex">
+          <div>
+            <h1 className="text-xl font-bold text-text-primary">{portalTitle}</h1>
+            <p className="text-xs text-text-secondary">Premium operations workspace</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="rounded-xl p-2 text-text-secondary transition-colors hover:bg-primary/10" type="button" aria-label="Search">
+              <Search className="h-5 w-5" />
+            </button>
+            <NotificationCenter />
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2">
+              <UserCircle className="h-5 w-5 text-primary" />
+              <span className="hidden text-sm font-semibold text-text-primary lg:inline">{user?.name ?? "Admin"}</span>
+            </div>
+          </div>
+        </header>
+        <div className="p-4 sm:p-6 lg:p-8">
 
           {/* Routes */}
           <Outlet />
@@ -75,6 +95,16 @@ export default function AdminDashboard() {
 
         {/* Billing (clinic-admin + super-admin) */}
         <Route path="billing" element={<AdminClinicBilling />} />
+
+        {/* Staff slot approvals */}
+        <Route
+          path="staff-requests"
+          element={
+            <SuperAdminOnly>
+              <AdminStaffRequests />
+            </SuperAdminOnly>
+          }
+        />
 
         {/* Users */}
         <Route path="users" element={<AdminUsers />} />

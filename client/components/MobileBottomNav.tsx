@@ -4,13 +4,7 @@
  */
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Bell,
-  User,
-} from "lucide-react";
+import { LayoutDashboard, Users, FileText, User, Settings } from "lucide-react";
 
 interface BottomNavItem {
   icon: React.ElementType;
@@ -30,6 +24,7 @@ const DOCTOR_ITEMS: BottomNavItem[] = [
   { icon: Users, label: "Queue", path: "/doctor-dashboard/queue" },
   { icon: FileText, label: "Rx", path: "/doctor-dashboard/prescriptions" },
   { icon: User, label: "Profile", path: "/profile/basic" },
+  { icon: Settings, label: "More", path: "/doctor-dashboard/settings" },
 ];
 
 const RECEPTION_ITEMS: BottomNavItem[] = [
@@ -37,6 +32,7 @@ const RECEPTION_ITEMS: BottomNavItem[] = [
   { icon: Users, label: "Queue", path: "/reception-dashboard/queue" },
   { icon: FileText, label: "Intake", path: "/reception-dashboard/intake" },
   { icon: User, label: "Profile", path: "/profile/basic" },
+  { icon: Settings, label: "More", path: "/reception-dashboard/settings" },
 ];
 
 export default function MobileBottomNav({ role, queueCount, keyboardVisible }: MobileBottomNavProps) {
@@ -49,7 +45,7 @@ export default function MobileBottomNav({ role, queueCount, keyboardVisible }: M
 
   return (
     <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 flex items-stretch"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-card/95 shadow-[0_-12px_30px_rgba(26,26,46,0.08)] backdrop-blur md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {items.map((item) => {
@@ -67,23 +63,24 @@ export default function MobileBottomNav({ role, queueCount, keyboardVisible }: M
             type="button"
             onClick={() => navigate(item.path)}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] transition-colors active:scale-95 relative",
-              isActive ? "text-blue-600" : "text-gray-500"
+              "relative flex min-h-[60px] flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-all active:scale-95",
+              isActive ? "text-primary" : "text-text-muted"
             )}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
           >
             <span className="relative">
-              <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+              <Icon className="h-5 w-5" strokeWidth={isActive ? 2.7 : 2} fill={isActive ? "currentColor" : "none"} />
               {isQueue && typeof queueCount === "number" && queueCount > 0 && (
-                <span className="absolute -top-1.5 -right-2 bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                <span className="absolute -right-2 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-error text-[10px] font-bold leading-none text-white">
                   {queueCount > 9 ? "9+" : queueCount}
                 </span>
               )}
             </span>
-            <span className={cn("text-[10px] font-medium leading-none", isActive ? "text-blue-600" : "text-gray-500")}>
+            <span className={cn("text-[10px] font-semibold leading-none", isActive ? "text-primary" : "text-text-muted")}>
               {item.label}
             </span>
+            {isActive ? <span className="absolute bottom-0 h-0.5 w-8 rounded-full bg-accent" /> : null}
           </button>
         );
       })}

@@ -1,12 +1,9 @@
-/**
- * API origin for browser fetches. In dev, same-origin + Vite proxy works; in production
- * set VITE_API_URL to the public HTTPS API origin if the SPA is served separately.
- */
-export const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+import { getApiUrl } from "@/config/api";
+
+export { API_BASE_URL } from "@/config/api";
 
 export function apiUrl(path: string): string {
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return API_BASE_URL ? `${API_BASE_URL}${p}` : p;
+  return getApiUrl(path);
 }
 
 const REFRESH_STORAGE_KEY = "admin_refresh_token";

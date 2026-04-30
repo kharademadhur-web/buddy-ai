@@ -13,7 +13,7 @@ import {
   Plus,
   Calendar,
   CreditCard,
-  Microscope,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -59,6 +59,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
   });
   const [sheetOpen, setSheetOpen] = useState(false);
   const [portalClinic, setPortalClinic] = useState<{ name?: string; clinic_code?: string | null }>({});
+  const [staffRequestCount, setStaffRequestCount] = useState(0);
 
   useEffect(() => {
     if (role === "admin") return;
@@ -76,6 +77,28 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       })
       .catch(() => {});
   }, [role, adminAuth.user?.clinic_id]);
+
+  useEffect(() => {
+    if (role !== "admin" || adminAuth.user?.role !== "super-admin") return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await apiFetch("/api/admin/staff-requests?status=pending_admin");
+        const json = await res.json();
+        if (!cancelled && json.success && Array.isArray(json.requests)) {
+          setStaffRequestCount(json.requests.length);
+        }
+      } catch {
+        if (!cancelled) setStaffRequestCount(0);
+      }
+    };
+    void load();
+    const interval = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [role, adminAuth.user?.role]);
 
   const menuItems = {
     doctor: [
@@ -120,6 +143,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       { icon: BarChart3, label: "Analytics", path: "/admin-dashboard/analytics" },
       { icon: Users, label: "Clinics", path: "/admin-dashboard/clinics" },
       { icon: CreditCard, label: "Billing", path: "/admin-dashboard/billing" },
+      { icon: ClipboardCheck, label: "Staff Requests", path: "/admin-dashboard/staff-requests", badge: staffRequestCount },
       { icon: FileText, label: "KYC Review", path: "/admin-dashboard/kyc" },
       { icon: Settings, label: "Device Approvals", path: "/admin-dashboard/device-approvals" },
       {
@@ -135,10 +159,18 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       { icon: User, label: "Profile", path: "/profile/basic" },
       { icon: Settings, label: "Settings", path: "/admin-dashboard/settings" },
     ];
-  }, [adminAuth.user?.role]);
+  }, [adminAuth.user?.role, staffRequestCount]);
 
   const items = role === "admin" ? adminMenuItems : menuItems[role];
   const useMinimalPortalHeader = role === "doctor" || role === "reception";
+  const roleAccent =
+    role === "doctor"
+      ? "#2D6A4F"
+      : role === "reception"
+        ? "#7048E8"
+        : adminAuth.user?.role === "super-admin"
+          ? "#1A1A2E"
+          : "#1971C2";
 
   const handleLogout = () => {
     adminAuth.logout();
@@ -181,7 +213,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
 
   return (
     <>
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-3">
+      <div className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/95 px-3 backdrop-blur md:hidden">
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <Button type="button" variant="outline" size="icon" aria-label="Open menu">
@@ -191,12 +223,12 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
           <SheetContent side="left" className="w-[min(100vw,280px)] p-0 flex flex-col">
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg p-2">
+                <div className="rounded-xl p-2" style={{ backgroundColor: roleAccent }}>
                   <Stethoscope className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="font-bold text-gray-900">SmartClinic</h1>
-                  <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
+                  <h1 className="font-bold text-text-primary">SmartClinic</h1>
+                  <p className="text-xs text-text-secondary capitalize">{role.replace("-", " ")}</p>
                   {!useMinimalPortalHeader && portalClinic.name ? (
                     <p className="text-xs text-gray-700 mt-1 font-medium truncate max-w-[200px]" title={portalClinic.name}>
                       {portalClinic.name}
@@ -229,8 +261,8 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                         type="button"
                         onClick={() => toggleSection(sectionId)}
                         className={cn(
-                          "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left",
-                          isExpanded ? "bg-blue-50" : "text-gray-700 hover:bg-gray-100"
+                          "w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all",
+                          isExpanded ? "bg-primary/10 text-primary" : "text-text-secondary hover:bg-primary/5"
                         )}
                       >
                         <Icon className="w-5 h-5 flex-shrink-0" />
@@ -251,8 +283,8 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                                   setSheetOpen(false);
                                 }}
                                 className={cn(
-                                  "w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all text-left text-sm",
-                                  isSubActive ? "bg-blue-100 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-100"
+                                  "w-full flex items-center gap-3 rounded-xl px-4 py-2 text-left text-sm transition-all",
+                                  isSubActive ? "bg-primary/10 font-semibold text-primary" : "text-text-secondary hover:bg-primary/5"
                                 )}
                               >
                                 <SubIcon className="w-4 h-4 flex-shrink-0" />
@@ -274,9 +306,10 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                       setSheetOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left min-h-[48px] active:scale-95",
-                      isActive ? "bg-blue-100 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100"
+                      "w-full flex min-h-[48px] items-center gap-3 rounded-xl border-l-4 px-4 py-3 text-left transition-all active:scale-95",
+                      isActive ? "bg-primary/10 font-semibold text-primary" : "border-transparent text-text-secondary hover:bg-primary/5"
                     )}
+                    style={{ borderLeftColor: isActive ? roleAccent : "transparent" }}
                   >
                     <Icon className="w-5 h-5 flex-shrink-0" />
                     <span className="flex items-center gap-2 flex-1">
@@ -284,6 +317,11 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                       {item.label === "Queue" && typeof queueCount === "number" && queueCount > 0 ? (
                         <span className="ml-auto text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full min-w-[1.5rem] text-center">
                           {queueCount > 99 ? "99+" : queueCount}
+                        </span>
+                      ) : null}
+                      {typeof item.badge === "number" && item.badge > 0 ? (
+                        <span className="ml-auto min-w-[1.5rem] rounded-full bg-red-600 px-2 py-0.5 text-center text-xs font-bold text-white">
+                          {item.badge > 99 ? "99+" : item.badge}
                         </span>
                       ) : null}
                     </span>
@@ -306,19 +344,19 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
             </div>
           </SheetContent>
         </Sheet>
-        <span className="font-semibold text-gray-900 truncate">SmartClinic</span>
+        <span className="truncate font-semibold text-text-primary">SmartClinic</span>
         <span className="w-10" aria-hidden />
       </div>
-    <aside className="hidden md:flex w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
+    <aside className="sticky top-0 hidden h-screen w-16 shrink-0 flex-col border-r border-border bg-card md:flex xl:w-[260px]">
       {/* Logo */}
-      <div className="p-6 border-b border-gray-200">
+      <div className="border-b border-border p-4 xl:p-6">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg p-2">
+          <div className="rounded-xl p-2 shadow-sm" style={{ backgroundColor: roleAccent }}>
             <Stethoscope className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <h1 className="font-bold text-gray-900">SmartClinic</h1>
-            <p className="text-xs text-gray-500 capitalize">{role.replace("-", " ")}</p>
+          <div className="hidden min-w-0 xl:block">
+            <h1 className="font-bold text-text-primary">SmartClinic</h1>
+            <p className="text-xs text-text-secondary capitalize">{role.replace("-", " ")}</p>
             {role !== "admin" && !useMinimalPortalHeader && portalClinic.name ? (
               <p className="text-xs text-gray-700 mt-1 font-medium truncate" title={portalClinic.name}>
                 {portalClinic.name}
@@ -340,7 +378,7 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       </div>
 
       {/* Menu Items */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className="flex-1 space-y-2 overflow-y-auto p-2 xl:p-4">
         {items.map((item: any) => {
           const Icon = item.icon;
           const isActive = navItemActive(item.path);
@@ -354,12 +392,12 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
                 <button
                   onClick={() => toggleSection(sectionId)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left",
-                    isExpanded ? "bg-blue-50" : "text-gray-700 hover:bg-gray-100"
+                    "w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-all xl:px-4",
+                    isExpanded ? "bg-primary/10 text-primary" : "text-text-secondary hover:bg-primary/5"
                   )}
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
-                  <span className="flex-1">{item.label}</span>
+                  <span className="hidden flex-1 xl:inline">{item.label}</span>
                   <ChevronDown
                     className={cn(
                       "w-4 h-4 transition-transform",
@@ -403,18 +441,24 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
               type="button"
               onClick={() => navigatePortalPath(item.path)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-left min-h-[48px] active:scale-95",
+                "w-full flex min-h-[48px] items-center gap-3 rounded-xl border-l-4 px-3 py-3 text-left transition-all active:scale-95 xl:px-4",
                 isActive
-                  ? "bg-blue-100 text-blue-700 font-semibold"
-                  : "text-gray-700 hover:bg-gray-100"
+                  ? "bg-primary/10 font-semibold text-primary"
+                  : "border-transparent text-text-secondary hover:bg-primary/5"
               )}
+              style={{ borderLeftColor: isActive ? roleAccent : "transparent" }}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              <span className="flex items-center gap-2 flex-1">
+              <span className="hidden flex-1 items-center gap-2 xl:flex">
                 {item.label}
                 {item.label === "Queue" && typeof queueCount === "number" && queueCount > 0 ? (
                   <span className="ml-auto text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full min-w-[1.5rem] text-center">
                     {queueCount > 99 ? "99+" : queueCount}
+                  </span>
+                ) : null}
+                {typeof item.badge === "number" && item.badge > 0 ? (
+                  <span className="ml-auto min-w-[1.5rem] rounded-full bg-red-600 px-2 py-0.5 text-center text-xs font-bold text-white">
+                    {item.badge > 99 ? "99+" : item.badge}
                   </span>
                 ) : null}
               </span>
@@ -424,14 +468,14 @@ export default function Sidebar({ role, queueCount }: SidebarProps) {
       </nav>
 
       {/* Logout Button */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="border-t border-border p-2 xl:p-4">
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all font-semibold min-h-[48px] active:scale-95"
+          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-error/10 px-4 py-3 font-semibold text-error transition-all hover:bg-error/15 active:scale-95"
         >
           <LogOut className="w-5 h-5" />
-          Logout
+          <span className="hidden xl:inline">Logout</span>
         </button>
       </div>
     </aside>

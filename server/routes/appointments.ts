@@ -15,6 +15,7 @@ import type {
   RealtimeEvent,
 } from "@shared/api";
 import { sendJsonError } from "../lib/send-json-error";
+import { createNotification } from "../services/app-notifications.service";
 
 const router = Router();
 
@@ -74,6 +75,15 @@ router.post(
       payload: data as AppointmentDTO,
     };
     realtimeService.emit(event);
+
+    void createNotification({
+      userId: data.doctor_user_id,
+      clinicId: data.clinic_id,
+      type: "patient_checked_in",
+      title: "New appointment added",
+      message: "A patient has been added to your queue.",
+      data: { appointmentId: data.id, patientId: data.patient_id },
+    });
 
     return res.status(201).json({ success: true, appointment: data });
   }
@@ -242,6 +252,15 @@ router.post(
       payload: data as AppointmentDTO,
     };
     realtimeService.emit(event);
+
+    void createNotification({
+      userId: data.doctor_user_id,
+      clinicId: data.clinic_id,
+      type: "patient_checked_in",
+      title: "Patient checked in",
+      message: "A patient is ready in your queue.",
+      data: { appointmentId: data.id, patientId: data.patient_id },
+    });
 
     return res.json({ success: true, appointment: data });
   }

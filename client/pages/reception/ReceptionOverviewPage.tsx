@@ -1,6 +1,6 @@
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { useReceptionPortal } from "@/context/ReceptionPortalContext";
-import { Users, TrendingUp } from "lucide-react";
+import { Users, TrendingUp, IndianRupee, Clock } from "lucide-react";
 
 export default function ReceptionOverviewPage() {
   const { user } = useAdminAuth();
@@ -10,77 +10,86 @@ export default function ReceptionOverviewPage() {
   const completedToday = summary?.completedToday ?? 0;
   const totalCollected = summary?.totalCollected ?? 0;
   const kpiText = (isLoading: boolean, value: string | number) =>
-    isLoading ? <span className="text-2xl text-gray-400">Loading...</span> : value;
+    isLoading ? <span className="text-2xl text-text-muted">Loading...</span> : value;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8 animate-fade-in">
       <div className="mb-4 sm:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Reception Dashboard</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-text-primary">Today at your clinic</h1>
           {user?.name ? (
-            <p className="mt-1 text-sm text-gray-600">
-              Signed in as <span className="font-medium text-gray-800">{user.name}</span>
+            <p className="mt-1 text-sm text-text-secondary">
+              Signed in as <span className="font-medium text-text-primary">{user.name}</span>
               {user.user_id ? (
-                <span className="ml-2 font-mono text-xs text-gray-500">{user.user_id}</span>
+                <span className="ml-2 font-mono text-xs text-text-muted">{user.user_id}</span>
               ) : null}
             </p>
           ) : null}
-          <p className="mt-1 text-sm text-gray-500">Overview</p>
+          <p className="mt-1 text-sm text-text-muted">{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</p>
         </div>
       </div>
 
       {!clinicId && (
-        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
+        <div className="mb-4 rounded-2xl border border-warning/20 bg-warning/10 p-4 text-sm text-text-primary">
           No clinic is assigned to this account. Contact your administrator to attach this user to a clinic.
         </div>
       )}
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>
+        <div className="mb-4 rounded-2xl border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Patients in Queue</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{kpiText(loading, queue.length)}</p>
+              <p className="text-sm font-medium text-text-secondary">Waiting</p>
+              <p className="mt-2 animate-count-up text-3xl font-bold text-text-primary">{kpiText(loading, queue.length)}</p>
             </div>
-            <Users className="w-12 h-12 text-blue-600 opacity-10" />
+            <Users className="h-12 w-12 text-role-receptionist opacity-20" />
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Completed Today</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{kpiText(summaryLoading, completedToday)}</p>
+              <p className="text-sm font-medium text-text-secondary">Done</p>
+              <p className="mt-2 animate-count-up text-3xl font-bold text-text-primary">{kpiText(summaryLoading, completedToday)}</p>
             </div>
-            <TrendingUp className="w-12 h-12 text-green-600 opacity-10" />
+            <TrendingUp className="h-12 w-12 text-success opacity-20" />
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Collected Today (paid)</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
+              <p className="text-sm font-medium text-text-secondary">Revenue today</p>
+              <p className="mt-2 animate-count-up text-3xl font-bold text-text-primary">
                 {kpiText(summaryLoading, `₹${totalCollected}`)}
               </p>
             </div>
-            <TrendingUp className="w-12 h-12 text-green-600 opacity-10" />
+            <IndianRupee className="h-12 w-12 text-accent opacity-20" />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-text-secondary">Checked in</p>
+              <p className="mt-2 animate-count-up text-3xl font-bold text-text-primary">{kpiText(loading, queue.length + completedToday)}</p>
+            </div>
+            <Clock className="h-12 w-12 text-info opacity-20" />
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col md:flex-row gap-6 items-center">
+      <div className="flex flex-col items-center gap-6 rounded-2xl border border-border bg-card p-6 shadow-sm md:flex-row">
         <div className="text-center md:text-left flex-1">
-          <h2 className="text-lg font-semibold text-gray-900">Payments & OTP</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <h2 className="text-lg font-semibold text-text-primary">Payments & OTP</h2>
+          <p className="mt-1 text-sm text-text-secondary">
             Clinic letterhead is uploaded in Admin (onboarding or clinic detail) and appears on the patient intake
             form. UPI / QR for collections. OTP contact:{" "}
             <a
-              className="text-blue-600 font-medium"
+              className="font-medium text-primary"
               href={`tel:+91${import.meta.env.VITE_OTP_PHONE || "9137295344"}`}
             >
               +91 {import.meta.env.VITE_OTP_PHONE || "9137295344"}
@@ -92,19 +101,19 @@ export default function ReceptionOverviewPage() {
             <img
               src={paymentQrUrl}
               alt="Clinic payment QR"
-              className="w-40 h-40 rounded-lg border border-gray-200 bg-white object-contain"
+              className="h-40 w-40 rounded-2xl border border-border bg-white object-contain"
             />
           ) : (
-            <div className="w-40 h-40 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-center text-xs text-gray-500 p-2">
+            <div className="flex h-40 w-40 items-center justify-center rounded-2xl border border-dashed border-border bg-surface p-2 text-center text-xs text-text-muted">
               Upload clinic payment QR in Admin → clinic (onboarding or clinic detail).
             </div>
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
-        <h2 className="text-lg font-semibold text-gray-900">Doctor live status</h2>
-        <p className="text-sm text-gray-600 mt-1">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-text-primary">Doctor live status</h2>
+        <p className="mt-1 text-sm text-text-secondary">
           Online means doctor is accepting patients and active in doctor portal.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

@@ -144,3 +144,10 @@ ALTER TABLE consultations
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS doctor_status VARCHAR(20) DEFAULT 'available'
   CHECK (doctor_status IN ('available', 'on_break', 'done'));
+
+-- ============================================================
+-- 8. Storage bucket for patient reports
+-- ============================================================
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('patient-reports', 'patient-reports', false)
+ON CONFLICT (id) DO NOTHING;

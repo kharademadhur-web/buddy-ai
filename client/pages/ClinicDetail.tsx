@@ -360,11 +360,11 @@ export default function ClinicDetail() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 px-1 max-w-6xl">
+    <div className="max-w-6xl space-y-4 px-1 animate-fade-in sm:space-y-6">
       <button
         type="button"
         onClick={() => navigate("/admin-dashboard/clinics")}
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-semibold text-sm sm:text-base"
+        className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary-dark sm:text-base"
       >
         <ArrowLeft className="w-5 h-5 shrink-0" />
         Back to Clinics
@@ -376,15 +376,15 @@ export default function ClinicDetail() {
         </Alert>
       ) : null}
 
-      <div className="rounded-xl border bg-white p-4 sm:p-6 space-y-4">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{clinic.name}</div>
-            <div className="text-sm text-gray-600 mt-1 font-mono break-all">{clinic.clinic_code}</div>
-            <div className="text-sm text-gray-600 mt-1 break-words">{clinic.address}</div>
-            <div className="text-sm text-gray-600 break-all">{clinic.phone}</div>
-            <div className="text-sm text-gray-600 break-all">{clinic.email}</div>
-            <p className="text-xs text-gray-500 mt-2">
+            <div className="break-words text-xl font-bold text-text-primary sm:text-2xl">{clinic.name}</div>
+            <div className="mt-1 break-all font-mono text-sm text-text-secondary">{clinic.clinic_code}</div>
+            <div className="mt-1 break-words text-sm text-text-secondary">{clinic.address}</div>
+            <div className="break-all text-sm text-text-secondary">{clinic.phone}</div>
+            <div className="break-all text-sm text-text-secondary">{clinic.email}</div>
+            <p className="mt-2 text-xs text-text-muted">
               Internal clinic id: <span className="font-mono">{clinicId}</span> — all staff below belong to this clinic.
             </p>
           </div>
@@ -393,37 +393,37 @@ export default function ClinicDetail() {
           </Button>
         </div>
 
-        <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-gray-900">Subscription & billing</h3>
+        <div className="space-y-2 rounded-2xl border border-primary/10 bg-primary/5 p-4">
+          <h3 className="text-sm font-semibold text-text-primary">Subscription & billing</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>
-              <span className="text-gray-600">Status:</span>{" "}
+              <span className="text-text-secondary">Status:</span>{" "}
               <Badge variant="secondary">{clinic.subscription_status ?? "—"}</Badge>
             </div>
             <div>
-              <span className="text-gray-600">Days remaining:</span>{" "}
+              <span className="text-text-secondary">Days remaining:</span>{" "}
               <span className="font-medium">
                 {typeof clinic.days_remaining === "number" ? clinic.days_remaining : "—"}
               </span>
             </div>
             <div>
-              <span className="text-gray-600">Period start:</span>{" "}
+              <span className="text-text-secondary">Period start:</span>{" "}
               {clinic.subscription_started_at
                 ? new Date(clinic.subscription_started_at).toLocaleDateString("en-IN")
                 : "—"}
             </div>
             <div>
-              <span className="text-gray-600">Expires:</span>{" "}
+              <span className="text-text-secondary">Expires:</span>{" "}
               {clinic.subscription_expires_at
                 ? new Date(clinic.subscription_expires_at).toLocaleDateString("en-IN")
                 : "—"}
             </div>
             <div>
-              <span className="text-gray-600">Plan (monthly):</span> ₹
+              <span className="text-text-secondary">Plan (monthly):</span> ₹
               {Number(clinic.saas_plan_amount_monthly ?? 5999).toLocaleString("en-IN")}
             </div>
             {clinic.last_saas_payment ? (
-              <div className="sm:col-span-2 text-xs text-gray-600">
+              <div className="text-xs text-text-secondary sm:col-span-2">
                 Last payment: ₹{Number((clinic.last_saas_payment as { amount?: number }).amount ?? 0).toLocaleString("en-IN")}{" "}
                 on{" "}
                 {(clinic.last_saas_payment as { paid_at?: string }).paid_at
@@ -481,12 +481,12 @@ export default function ClinicDetail() {
       </div>
 
       {(isSuperAdmin || user?.role === "clinic-admin") && (
-        <div className="rounded-xl border bg-white p-4 sm:p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Mobile workflow — letterhead & QR</h2>
-          <p className="text-sm text-gray-600">
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-6">
+          <h2 className="text-lg font-semibold text-text-primary">Mobile workflow — letterhead & QR</h2>
+          <p className="text-sm text-text-secondary">
             Upload assets to Supabase Storage; staff apps load signed URLs for overlays and payment QR.
           </p>
-          {workflowMsg ? <p className="text-sm text-blue-700">{workflowMsg}</p> : null}
+          {workflowMsg ? <p className="rounded-xl bg-info/10 p-3 text-sm text-info">{workflowMsg}</p> : null}
           <div className="flex flex-wrap gap-4">
             <label className="text-sm font-medium text-gray-800">
               Letterhead (PDF/PNG)

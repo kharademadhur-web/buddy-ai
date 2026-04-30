@@ -8,10 +8,11 @@ import ActivePatientPanel from "@/components/ActivePatientPanel";
 import PrescriptionCanvas from "@/components/PrescriptionCanvas";
 import MedicineTable from "@/components/MedicineTable";
 import ReportsTab from "@/components/ReportsTab";
-import { apiErrorMessage, apiUrl, errorMessageFromUnknown } from "@/lib/api-base";
+import { apiErrorMessage, apiFetch, apiUrl, errorMessageFromUnknown } from "@/lib/api-base";
 import { buildPrescriptionHtml as buildPrescriptionLetterheadHtml } from "@/lib/prescription-letterhead";
+import { handwritingStrokesToPngDataUrl } from "@/lib/handwriting-raster";
 import { toast } from "sonner";
-import { FileText, Download, Printer, CheckCircle2, Loader2, Upload } from "lucide-react";
+import { FileText, Download, Printer, CheckCircle2, Loader2, Upload, ScanText, Send } from "lucide-react";
 
 export default function DoctorConsultationPage() {
   const { appointmentId = "" } = useParams<{ appointmentId: string }>();
@@ -19,6 +20,10 @@ export default function DoctorConsultationPage() {
   const location = useLocation();
   const [reportsReloadKey, setReportsReloadKey] = useState(0);
   const [attachingReport, setAttachingReport] = useState(false);
+  const [structuredOcrLoading, setStructuredOcrLoading] = useState(false);
+  const [aiHealthSummary, setAiHealthSummary] = useState("");
+  const [sendingReport, setSendingReport] = useState(false);
+  const [deliveryStatus, setDeliveryStatus] = useState<{ whatsapp?: boolean; email?: boolean; sms?: boolean } | null>(null);
   const {
     clinicId,
     loading,
@@ -31,6 +36,7 @@ export default function DoctorConsultationPage() {
     selectedAppt,
     prescriptionNotes,
     setPrescriptionNotes,
+    handwritingStrokes,
     setHandwritingStrokes,
     medicines,
     setMedicines,
@@ -62,7 +68,7 @@ export default function DoctorConsultationPage() {
 
   const existsInQueue = useMemo(() => rows.some((r) => r.appointmentId === appointmentId), [rows, appointmentId]);
 
-  const buildPrescriptionHtml = (letterheadOverride?: Letterhead | null) => {
+  const buildPrescriptionHtml = (letterheadOverride?: Letterhead | null, summaryOverride?: string) => {
     const patientName = activePatient?.name || "Patient";
     const patientPhone = activePatient?.phone || "—";
     const patientAge = activePatient?.age ? `${activePatient.age}` : "—";
@@ -70,7 +76,7 @@ export default function DoctorConsultationPage() {
     const doctorName = user?.name || "Doctor";
     const complaint = selectedAppt?.chief_complaint || "—";
     const notes = prescriptionNotes || "—";
-    const summary = voiceEnglishPhrase?.trim() || "";
+    const summary = summaryOverride?.trim() || aiHealthSummary.trim() || voiceEnglishPhrase?.trim() || "";
     return buildPrescriptionLetterheadHtml({
       clinicLetterhead: letterheadOverride === undefined ? clinicLetterhead : letterheadOverride,
       fieldMap: clinicLetterheadFieldMap,
@@ -91,6 +97,27 @@ export default function DoctorConsultationPage() {
     });
   };
 
+  const ensurePatientSummary = async () => {
+    if (aiHealthSummary.trim()) return aiHealthSummary.trim();
+    const response = await apiFetch("/api/ai/generate-prescription-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patientName: activePatient?.name || "Patient",
+        age: activePatient?.age || "",
+        diagnosis: selectedAppt?.chief_complaint || prescriptionNotes,
+        medicines,
+        notes: prescriptionNotes,
+        doctorName: user?.name || "Doctor",
+        clinicName: clinicMeta?.name || "Clinic",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data?.success) throw new Error(apiErrorMessage(data) || "Could not generate patient summary");
+    setAiHealthSummary(data.summary || "");
+    return String(data.summary || "");
+  };
+
   const toDataUrl = async (url: string): Promise<string | null> => {
     try {
       const res = await fetch(url);
@@ -108,14 +135,16 @@ export default function DoctorConsultationPage() {
   };
 
   const buildPrescriptionHtmlForOutput = async () => {
+    const summary = await ensurePatientSummary();
     const latestLetterhead = await refreshClinicLetterhead();
     const source = latestLetterhead ?? clinicLetterhead;
     if (!source?.templateUrl || String(source.mime || "").toLowerCase().includes("pdf")) {
-      return buildPrescriptionHtml(source);
+      return buildPrescriptionHtml(source, summary);
     }
     const embeddedUrl = await toDataUrl(source.templateUrl);
     return buildPrescriptionHtml(
-      embeddedUrl ? { ...source, templateUrl: embeddedUrl } : source
+      embeddedUrl ? { ...source, templateUrl: embeddedUrl } : source,
+      summary
     );
   };
 
@@ -181,6 +210,95 @@ export default function DoctorConsultationPage() {
     }
   };
 
+  const handleConvertHandwritingToPrescription = async () => {
+    if (!handwritingStrokes || handwritingStrokes.lines.length === 0) {
+      toast.error("Write on the handwriting pad first.");
+      return;
+    }
+
+    const imageBase64 = handwritingStrokesToPngDataUrl(handwritingStrokes);
+    if (!imageBase64) {
+      toast.error("Could not render handwriting.");
+      return;
+    }
+
+    setStructuredOcrLoading(true);
+    try {
+      const response = await apiFetch("/api/ai/handwriting-to-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(apiErrorMessage(data) || "AI handwriting conversion failed");
+      }
+
+      const extracted = data.structured || {};
+      const extractedMedicines = Array.isArray(extracted.medicines) ? extracted.medicines : [];
+      if (extractedMedicines.length > 0) {
+        setMedicines((prev) => [
+          ...prev,
+          ...extractedMedicines.map((m: Record<string, unknown>, index: number) => ({
+            id: `ocr-${Date.now()}-${index}`,
+            name: String(m.name || ""),
+            dosage: String(m.dosage || ""),
+            frequency: String(m.frequency || ""),
+            duration: String(m.duration || ""),
+          })).filter((m: { name: string }) => m.name.trim()),
+        ]);
+      }
+
+      if (typeof extracted.notes === "string" && extracted.notes.trim()) {
+        const note = extracted.notes.trim();
+        const prev = prescriptionNotes.trim();
+        setPrescriptionNotes(prev ? `${prev}\n\n${note}` : note);
+      }
+
+      toast.success("AI extracted the handwritten prescription. Please review and edit before completing.");
+    } catch (e) {
+      toast.error(errorMessageFromUnknown(e, "AI handwriting conversion failed"));
+    } finally {
+      setStructuredOcrLoading(false);
+    }
+  };
+
+  const handleSendReportToPatient = async () => {
+    if (!activePatient || !clinicId || !selectedAppt) return;
+    setSendingReport(true);
+    setDeliveryStatus(null);
+    try {
+      const summary = await ensurePatientSummary();
+      const html = await buildPrescriptionHtmlForOutput();
+      const response = await apiFetch("/api/consultations/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clinicId,
+          patientId: activePatient.id,
+          consultationId: (selectedAppt as { consultation_id?: string | null }).consultation_id || undefined,
+          patientName: activePatient.name,
+          patientPhone: activePatient.phone || undefined,
+          patientEmail: (activePatient as { email?: string | null }).email || undefined,
+          doctorName: user?.name || "Doctor",
+          clinicName: clinicMeta?.name || "Clinic",
+          summary,
+          html,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(apiErrorMessage(data) || "Could not send report");
+      }
+      setDeliveryStatus(data.delivery || null);
+      toast.success("Patient report generated and delivery started.");
+    } catch (e) {
+      toast.error(errorMessageFromUnknown(e, "Could not send report"));
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-3 mb-6">
@@ -240,6 +358,23 @@ export default function DoctorConsultationPage() {
               Add drugs here first; search NIH RxNorm + clinic list. Optional Google Custom Search when configured on the server.
             </p>
             <MedicineTable medicines={medicines} onChange={setMedicines} editable={true} />
+            <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-blue-950">Handwritten prescription AI conversion</p>
+                <p className="text-xs text-blue-800">
+                  Write in the pad below, then use AI to fill this editable medicine table and notes.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleConvertHandwritingToPrescription()}
+                disabled={structuredOcrLoading || !handwritingStrokes?.lines?.length}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {structuredOcrLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanText className="w-4 h-4" />}
+                AI convert handwriting
+              </button>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
@@ -277,7 +412,7 @@ export default function DoctorConsultationPage() {
             ) : null}
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <button
               type="button"
               onClick={() => void handlePrintPrescription()}
@@ -312,7 +447,22 @@ export default function DoctorConsultationPage() {
               {completing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
               Complete
             </button>
+            <button
+              type="button"
+              onClick={() => void handleSendReportToPatient()}
+              disabled={sendingReport}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg font-semibold transition-colors"
+            >
+              {sendingReport ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              Send report
+            </button>
           </div>
+          {deliveryStatus ? (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-950">
+              Delivery status: WhatsApp {deliveryStatus.whatsapp ? "OK" : "Pending/Off"} | Email{" "}
+              {deliveryStatus.email ? "OK" : "Pending/Off"} | SMS {deliveryStatus.sms ? "OK" : "Pending/Off"}
+            </div>
+          ) : null}
 
           <section
             id="visit-reports"

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Clinical Assistant Hub</string>
-    <string name="title_activity_main">Clinical Assistant Hub</string>
-    <string name="package_name">com.clinicalassistant.hub</string>
-    <string name="custom_url_scheme">com.clinicalassistant.hub</string>
+    <string name="app_name">SmartClinic</string>
+    <string name="title_activity_main">SmartClinic</string>
+    <string name="package_name">com.smartclinic.app</string>
+    <string name="custom_url_scheme">com.smartclinic.app</string>
 </resources>

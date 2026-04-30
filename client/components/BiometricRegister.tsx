@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useBiometric } from "../hooks/useBiometric";
 import { Button } from "./ui/button";
 import { useToast } from "../hooks/use-toast";
+import { apiUrl } from "../lib/api-base";
 
 interface BiometricRegisterProps {
   userId: string;
@@ -51,7 +52,7 @@ export function BiometricRegister({
       if (result.success) {
         // Send credential to backend
         try {
-          const response = await fetch("/api/auth/register-biometric", {
+          const response = await fetch(apiUrl("/api/auth/register-biometric"), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

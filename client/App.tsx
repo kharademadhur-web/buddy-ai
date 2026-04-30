@@ -9,6 +9,7 @@ import { ClinicProvider } from "./context/ClinicContext";
 import { IS_MOBILE_BUILD } from "./config/buildTarget";
 import { useEffect, useState } from "react";
 import { apiUrl } from "./lib/api-base";
+import OfflineBanner from "./components/OfflineBanner";
 
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
@@ -18,6 +19,7 @@ import AdminLogin from "./pages/AdminLogin";
 import PortalLogin from "./pages/PortalLogin";
 import DoctorDashboard from "./pages/DoctorDashboard";
 import ReceptionDashboard from "./pages/ReceptionDashboard";
+import QueueDisplay from "./pages/QueueDisplay";
 
 const queryClient = new QueryClient();
 
@@ -28,11 +30,15 @@ function ServerHealthBanner() {
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(apiUrl("/health"), { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(apiUrl("/health"), { signal: controller.signal });
         if (!cancelled) setStatus(res.ok ? "ok" : "error");
       } catch {
         if (!cancelled) setStatus("error");
+      } finally {
+        window.clearTimeout(timeoutId);
       }
     };
     void check();
@@ -64,6 +70,7 @@ export default function App() {
         <Toaster />
         <Sonner />
         <ServerHealthBanner />
+        <OfflineBanner />
         <AdminAuthProvider>
           <ClinicProvider>
             <BrowserRouter>
@@ -71,7 +78,9 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/portal/login" replace />} />
 
                 {/* Shared portal login — mobile build redirects admin roles to web */}
+                <Route path="/login" element={<Navigate to="/portal/login" replace />} />
                 <Route path="/portal/login" element={<PortalLogin />} />
+                <Route path="/queue-display" element={<QueueDisplay />} />
 
                 {/* Staff dashboards */}
                 <Route
@@ -85,6 +94,7 @@ export default function App() {
                     </AdminProtectedRoute>
                   }
                 />
+                <Route path="/doctor/*" element={<Navigate to="/doctor-dashboard" replace />} />
                 <Route
                   path="/reception-dashboard/*"
                   element={
@@ -96,8 +106,12 @@ export default function App() {
                     </AdminProtectedRoute>
                   }
                 />
+                <Route path="/reception/*" element={<Navigate to="/reception-dashboard" replace />} />
+                <Route path="/queue/*" element={<Navigate to="/doctor-dashboard/queue" replace />} />
+                <Route path="/consultation/*" element={<Navigate to="/doctor-dashboard/queue" replace />} />
+                <Route path="/patient/*" element={<Navigate to="/doctor-dashboard/queue" replace />} />
 
-                {/* Admin portal — web build only */}
+                {/* Admin portal — web build includes clinic-admin and super-admin */}
                 {!IS_MOBILE_BUILD && (
                   <>
                     <Route path="/admin/login" element={<AdminLogin />} />
@@ -113,11 +127,13 @@ export default function App() {
                   </>
                 )}
 
-                {/* Redirect admin routes to portal login on mobile */}
+                {/* Mobile build blocks all admin routes (web-only) */}
                 {IS_MOBILE_BUILD && (
                   <>
                     <Route path="/admin/login" element={<Navigate to="/portal/login" replace />} />
                     <Route path="/admin-dashboard/*" element={<Navigate to="/portal/login" replace />} />
+                    <Route path="/super-admin/*" element={<Navigate to="/portal/login" replace />} />
+                    <Route path="/clinic-admin/*" element={<Navigate to="/portal/login" replace />} />
                     <Route path="/admin" element={<Navigate to="/portal/login" replace />} />
                   </>
                 )}

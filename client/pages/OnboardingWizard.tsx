@@ -6,6 +6,7 @@ import { AddDoctor } from "./onboarding/AddDoctor";
 import { AddReceptionist } from "./onboarding/AddReceptionist";
 import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { apiUrl } from "@/lib/api-base";
 
 const STEPS = ["Create Clinic", "Add Doctor", "Add Receptionist"];
 
@@ -39,7 +40,7 @@ export function OnboardingWizard() {
       setIsLoading(true);
       setError("");
 
-      const response = await fetch("/api/onboarding/clinic", {
+      const response = await fetch(apiUrl("/api/onboarding/clinic"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -92,7 +93,7 @@ export function OnboardingWizard() {
 
       // TODO: Handle file uploads to Supabase or cloud storage
 
-      const response = await fetch("/api/onboarding/doctor", {
+      const response = await fetch(apiUrl("/api/onboarding/doctor"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${sessionStorage.getItem("accessToken")}`,
@@ -145,7 +146,7 @@ export function OnboardingWizard() {
 
       // TODO: Handle file uploads to Supabase or cloud storage
 
-      const response = await fetch("/api/onboarding/receptionist", {
+      const response = await fetch(apiUrl("/api/onboarding/receptionist"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${sessionStorage.getItem("accessToken")}`,

@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, apiErrorMessage, errorMessageFromUnknown } from "@/lib/api-base";
+import { KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type DeviceRequest = {
   id: string;
@@ -96,13 +98,14 @@ export default function AdminDeviceApprovals() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-xl font-semibold text-gray-900">Device Approvals</div>
-          <div className="text-sm text-gray-600">Approve or reject pending device changes.</div>
+          <div className="text-2xl font-bold text-text-primary">Device Approvals</div>
+          <div className="text-sm text-text-secondary">Approve or reject pending device changes.</div>
         </div>
         <Button variant="outline" onClick={fetchPending} disabled={loading}>
+          <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
         </Button>
       </div>
@@ -114,29 +117,40 @@ export default function AdminDeviceApprovals() {
       ) : null}
 
       <div className="space-y-3">
+        {loading ? (
+          <>
+            <Skeleton className="h-24 rounded-2xl" />
+            <Skeleton className="h-24 rounded-2xl" />
+          </>
+        ) : null}
         {requests.length === 0 && !loading ? (
-          <div className="text-sm text-gray-600">No pending requests.</div>
+          <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+            <ShieldCheck className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+            <p className="font-semibold text-text-primary">No pending device requests</p>
+            <p className="text-sm text-text-secondary">New device approvals will appear here.</p>
+          </div>
         ) : null}
 
         {requests.map((r) => (
-          <div key={r.id} className="rounded-lg border bg-white p-4 flex items-center justify-between">
+          <div key={r.id} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="font-semibold text-gray-900">
+              <div className="font-semibold text-text-primary">
                 {r.users?.name || "User"}{" "}
-                <span className="ml-2 font-mono text-xs text-gray-500">{r.users?.user_id}</span>
+                <span className="ml-2 font-mono text-xs text-text-muted">{r.users?.user_id}</span>
               </div>
-              <div className="text-xs text-gray-600 mt-1">
+              <div className="mt-1 flex items-center gap-1 text-xs text-text-secondary">
+                <KeyRound className="h-3 w-3" />
                 Requested:{" "}
                 <span className="font-mono">
                   {r.new_device_id || r.device_id || r.device_fingerprint || "unknown"}
                 </span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="mt-1 text-xs text-text-muted">
                 {new Date(r.created_at).toLocaleString()}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">{r.status}</Badge>
+              <Badge className="border-info/20 bg-info/10 text-info">{r.status}</Badge>
               <Button size="sm" onClick={() => approve(r.id)} disabled={loading}>
                 Approve
               </Button>

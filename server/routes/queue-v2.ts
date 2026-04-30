@@ -11,6 +11,30 @@ import { sendJsonError } from "../lib/send-json-error";
 const router = Router();
 
 /**
+ * GET /api/queue/public-display?clinicId=xxx
+ * Public waiting-room TV/tablet display. No auth; shows minimal PHI.
+ */
+router.get("/public-display", async (req: Request, res: Response) => {
+  const { clinicId } = req.query as { clinicId?: string };
+  if (!clinicId) return sendJsonError(res, 400, "clinicId is required", "VALIDATION_ERROR");
+
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("id, status, appointment_time, token_number, patient_id, patients(name)")
+    .eq("clinic_id", clinicId)
+    .in("status", ["checked_in", "in_consultation"])
+    .order("appointment_time", { ascending: true })
+    .limit(8);
+
+  if (error) return sendJsonError(res, 500, error.message, "INTERNAL_SERVER_ERROR");
+
+  const current = (data || []).find((a) => a.status === "in_consultation") || null;
+  const next = (data || []).filter((a) => a.id !== current?.id).slice(0, 3);
+  return res.json({ success: true, current, next, updatedAt: new Date().toISOString() });
+});
+
+/**
  * GET /api/queue
  * Queue derived from appointments for clinic (optionally doctor).
  * Returns checked-in and in_consultation appointments ordered by time.

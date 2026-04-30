@@ -20,8 +20,6 @@ type PrescriptionHtmlInput = {
   medicines: Medicine[];
 };
 
-const fmtPct = (n: number | undefined, fallback: number) => `${Number.isFinite(n) ? n : fallback}%`;
-
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -56,21 +54,117 @@ export function buildPrescriptionHtml(input: PrescriptionHtmlInput): string {
   const summaryText = input.summary?.trim() || "";
   const tokenText = input.patient.token != null && `${input.patient.token}`.trim() ? `#${input.patient.token}` : "";
 
-  const medsHtml = input.medicines.length
-    ? input.medicines
-        .map((m) => {
-          const details = [m.dosage, m.frequency, m.duration].filter(Boolean).join(" | ");
-          return `<li><strong>${escapeHtml(m.name || "Medicine")}</strong>${details ? ` - ${escapeHtml(details)}` : ""}</li>`;
-        })
-        .join("")
-    : "<li>No medicines added.</li>";
+  const medicineRows = input.medicines.length
+    ? input.medicines.map(
+        (m, index) => `<tr>
+          <td>${index + 1}</td>
+          <td><strong>${escapeHtml(m.name || "Medicine")}</strong></td>
+          <td>${escapeHtml(m.dosage || "")}</td>
+          <td>${escapeHtml(m.frequency || "")}</td>
+          <td>${escapeHtml(m.duration || "")}</td>
+        </tr>`
+      )
+    : [
+        `<tr>
+          <td>1</td>
+          <td colspan="4">No medicines added.</td>
+        </tr>`,
+      ];
 
-  const box = {
-    patientName: input.fieldMap?.patientName,
-    ageGender: input.fieldMap?.ageGender,
-    phone: input.fieldMap?.phone,
-    prescriptionArea: input.fieldMap?.prescriptionArea,
-    aiSummaryArea: input.fieldMap?.aiSummaryArea,
+  // Simple deterministic pagination for print/PDF. The page container is flex,
+  // and only the final page receives the summary box with margin-top:auto.
+  const firstPageCapacity = notesText.length > 700 || complaintText.length > 400 ? 6 : 10;
+  const nextPageCapacity = notesText.length > 700 ? 12 : 16;
+  const pages: string[][] = [];
+  let remaining = [...medicineRows];
+  pages.push(remaining.splice(0, firstPageCapacity));
+  while (remaining.length > 0 && pages.length < 3) {
+    pages.push(remaining.splice(0, nextPageCapacity));
+  }
+  if (remaining.length > 0) pages[pages.length - 1]!.push(...remaining);
+
+  const renderPage = (rows: string[], index: number) => {
+    const isFirst = index === 0;
+    const isLast = index === pages.length - 1;
+    return `<div class="paper page">
+      ${
+        hasImageLetterhead
+          ? `<img class="letterheadBg" src="${escapeHtml(input.clinicLetterhead!.templateUrl)}" alt="Clinic letterhead" />`
+          : ""
+      }
+      <div class="pageOverlay">
+        ${
+          isFirst
+            ? hasImageLetterhead
+              ? `<div class="letterheadSpacer"></div>`
+              : `<div class="fallbackHeader">
+                  <div class="fallbackRow">
+                    <div>
+                      <p class="fallbackClinic">${escapeHtml(clinicName)}</p>
+                      ${clinicAddress ? `<div class="muted">${escapeHtml(clinicAddress)}</div>` : ""}
+                      ${clinicPhone ? `<div class="muted">Phone: ${escapeHtml(clinicPhone)}</div>` : ""}
+                    </div>
+                    <div style="text-align:right">
+                      <div><strong>${escapeHtml(input.doctorName)}</strong></div>
+                      <div class="muted">${escapeHtml(input.visitDateText)}</div>
+                    </div>
+                  </div>
+                </div>`
+            : `<div class="continuedHeader">
+                <strong>${escapeHtml(clinicName)}</strong>
+                <span>${escapeHtml(input.patient.name)} - page ${index + 1}</span>
+              </div>`
+        }
+
+        ${
+          isFirst
+            ? `<section class="patientGrid">
+                <div><strong>Patient:</strong> ${escapeHtml(input.patient.name)}</div>
+                <div><strong>Age/Gender:</strong> ${escapeHtml(ageGenderText || "—")}</div>
+                <div><strong>Phone:</strong> ${escapeHtml(phoneText)}</div>
+                ${tokenText ? `<div><strong>Token:</strong> ${escapeHtml(tokenText)}</div>` : ""}
+                <div><strong>Doctor:</strong> ${escapeHtml(input.doctorName)}</div>
+                <div><strong>Date:</strong> ${escapeHtml(input.visitDateText)}</div>
+              </section>
+              <section class="block">
+                <h3>Chief complaint</h3>
+                <div class="preserve">${escapeHtml(complaintText)}</div>
+              </section>`
+            : ""
+        }
+
+        <section class="block">
+          <h3>Prescription ${pages.length > 1 ? `(page ${index + 1})` : ""}</h3>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Medicine</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr>
+            </thead>
+            <tbody>${rows.join("")}</tbody>
+          </table>
+        </section>
+
+        ${
+          isLast
+            ? `<section class="block">
+                <h3>Clinical notes</h3>
+                <div class="preserve">${escapeHtml(notesText)}</div>
+              </section>
+              <section class="signatureRow">
+                <div>Clinic stamp</div>
+                <div>Doctor signature<br/><strong>${escapeHtml(input.doctorName)}</strong></div>
+              </section>
+              ${
+                summaryText
+                  ? `<section class="summaryBox">
+                      <h3>Health summary for ${escapeHtml(input.patient.name)}</h3>
+                      <div class="preserve">${escapeHtml(summaryText)}</div>
+                    </section>`
+                  : ""
+              }`
+            : ""
+        }
+      </div>
+    </div>`;
   };
 
   return `<!doctype html>
@@ -86,11 +180,13 @@ export function buildPrescriptionHtml(input: PrescriptionHtmlInput): string {
       .paper {
         position: relative;
         width: 210mm;
-        min-height: 297mm;
+        height: 297mm;
         margin: 0 auto;
         background: #fff;
         overflow: hidden;
+        page-break-after: always;
       }
+      .paper:last-child { page-break-after: auto; }
       .letterheadBg {
         position: absolute;
         inset: 0;
@@ -102,6 +198,25 @@ export function buildPrescriptionHtml(input: PrescriptionHtmlInput): string {
         position: relative;
         min-height: 297mm;
         padding: 14mm;
+      }
+      .pageOverlay {
+        position: relative;
+        z-index: 1;
+        height: 297mm;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 14mm;
+      }
+      .letterheadSpacer { height: 32mm; flex: 0 0 auto; }
+      .continuedHeader {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid #d1d5db;
+        padding-bottom: 6px;
+        margin-bottom: 2px;
+        font-size: 12px;
+        color: #374151;
       }
       .fallbackHeader {
         border-bottom: 2px solid #1f2937;
@@ -136,8 +251,50 @@ export function buildPrescriptionHtml(input: PrescriptionHtmlInput): string {
       }
       ul { margin: 6px 0 0 18px; padding: 0; }
       li { margin: 4px 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #d1d5db; padding: 7px 8px; text-align: left; vertical-align: top; }
+      th { background: #f3f4f6; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
       .preserve { white-space: pre-wrap; }
       .stack { display: grid; gap: 8px; }
+      .patientGrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.92);
+        padding: 10px;
+        font-size: 12px;
+      }
+      .signatureRow {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 20mm;
+        color: #374151;
+        font-size: 12px;
+        padding-top: 8px;
+      }
+      .summaryBox {
+        margin-top: auto;
+        border: 1px solid #93c5fd;
+        border-left: 5px solid #2563eb;
+        border-radius: 10px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        padding: 10px 12px;
+        font-style: italic;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .summaryBox h3 {
+        margin: 0 0 5px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #1d4ed8;
+        font-style: normal;
+      }
       @media print {
         body { background: #fff; }
         .paper { margin: 0; }
@@ -145,80 +302,7 @@ export function buildPrescriptionHtml(input: PrescriptionHtmlInput): string {
     </style>
   </head>
   <body>
-    <div class="paper">
-      ${
-        hasImageLetterhead
-          ? `<img class="letterheadBg" src="${escapeHtml(input.clinicLetterhead!.templateUrl)}" alt="Clinic letterhead" />`
-          : ""
-      }
-      <div class="overlay">
-        ${
-          hasImageLetterhead
-            ? ""
-            : `<div class="fallbackHeader">
-                <div class="fallbackRow">
-                  <div>
-                    <p class="fallbackClinic">${escapeHtml(clinicName)}</p>
-                    ${clinicAddress ? `<div class="muted">${escapeHtml(clinicAddress)}</div>` : ""}
-                    ${clinicPhone ? `<div class="muted">Phone: ${escapeHtml(clinicPhone)}</div>` : ""}
-                  </div>
-                  <div style="text-align:right">
-                    <div><strong>${escapeHtml(input.doctorName)}</strong></div>
-                    <div class="muted">${escapeHtml(input.visitDateText)}</div>
-                  </div>
-                </div>
-              </div>`
-        }
-
-        <div class="abs" style="left:${fmtPct(box.patientName?.xPct, 8)}; top:${fmtPct(box.patientName?.yPct, hasImageLetterhead ? 14 : 18)}; width:${fmtPct(box.patientName?.wPct, 46)}; min-height:${fmtPct(box.patientName?.hPct, 5)};">
-          <strong>Patient:</strong> ${escapeHtml(input.patient.name)}
-          ${tokenText ? `<span style="float:right"><strong>Token:</strong> ${escapeHtml(tokenText)}</span>` : ""}
-        </div>
-
-        <div class="abs" style="left:${fmtPct(box.ageGender?.xPct, 8)}; top:${fmtPct(box.ageGender?.yPct, hasImageLetterhead ? 21 : 24)}; width:${fmtPct(box.ageGender?.wPct, 36)}; min-height:${fmtPct(box.ageGender?.hPct, 4.8)};">
-          <strong>Age/Gender:</strong> ${escapeHtml(ageGenderText || "—")}
-        </div>
-
-        <div class="abs" style="left:${fmtPct(box.phone?.xPct, 8)}; top:${fmtPct(box.phone?.yPct, hasImageLetterhead ? 27.4 : 29.8)}; width:${fmtPct(box.phone?.wPct, 36)}; min-height:${fmtPct(box.phone?.hPct, 4.8)};">
-          <strong>Phone:</strong> ${escapeHtml(phoneText)}
-        </div>
-
-        <div class="abs" style="right:8%; top:${hasImageLetterhead ? "14%" : "18%"}; width:34%; min-height:10%;">
-          <div><strong>Doctor:</strong> ${escapeHtml(input.doctorName)}</div>
-          <div class="muted" style="margin-top:4px;">${escapeHtml(input.visitDateText)}</div>
-        </div>
-
-        <div class="stack" style="position:absolute; left:${fmtPct(box.prescriptionArea?.xPct, 8)}; top:${fmtPct(box.prescriptionArea?.yPct, hasImageLetterhead ? 36 : 40)}; width:${fmtPct(box.prescriptionArea?.wPct, 84)};">
-          <section class="block">
-            <h3>Chief complaint (Reception)</h3>
-            <div class="preserve">${escapeHtml(complaintText)}</div>
-          </section>
-          <section class="block">
-            <h3>Prescription (Medicines)</h3>
-            <ul>${medsHtml}</ul>
-          </section>
-          <section class="block">
-            <h3>Clinical notes</h3>
-            <div class="preserve">${escapeHtml(notesText)}</div>
-          </section>
-        </div>
-
-        ${
-          summaryText
-            ? `<section class="block" style="position:absolute; left:${fmtPct(
-                box.aiSummaryArea?.xPct,
-                8
-              )}; top:${fmtPct(box.aiSummaryArea?.yPct, 78)}; width:${fmtPct(box.aiSummaryArea?.wPct, 84)}; min-height:${fmtPct(
-                box.aiSummaryArea?.hPct,
-                12
-              )};">
-                <h3>Conversation summary</h3>
-                <div class="preserve">${escapeHtml(summaryText)}</div>
-              </section>`
-            : ""
-        }
-      </div>
-    </div>
+    ${pages.map(renderPage).join("")}
   </body>
 </html>`;
 }

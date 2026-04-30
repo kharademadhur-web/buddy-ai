@@ -5,7 +5,7 @@ import { AddDoctor } from "./onboarding/AddDoctor";
 import { AddReceptionist } from "./onboarding/AddReceptionist";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, AlertTriangle } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CheckCircle2, Stethoscope, UserPlus } from "lucide-react";
 import { apiFetch, getAccessToken } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 
@@ -253,7 +253,32 @@ export default function AdminOnboarding() {
     "If the database is missing KYC columns, run migrations 009–010; if you see errors about updated_at on doctors, run 012 as well. Then re-attach documents from clinic settings or contact support.";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-text-primary">Clinic onboarding</h2>
+            <p className="text-sm text-text-secondary">Create a clinic, add staff, and hand over credentials in one guided flow.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
+            {[
+              { n: 1, label: "Clinic", icon: Building2 },
+              { n: 2, label: "Doctor", icon: Stethoscope },
+              { n: 3, label: "Reception", icon: UserPlus },
+            ].map((s) => (
+              <div
+                key={s.n}
+                className={`rounded-2xl border px-3 py-2 text-center transition-all ${
+                  step === s.n ? "border-primary bg-primary/10 text-primary" : "border-border bg-surface text-text-secondary"
+                }`}
+              >
+                <s.icon className="mx-auto mb-1 h-4 w-4" />
+                {s.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       {error ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -316,18 +341,21 @@ export default function AdminOnboarding() {
       )}
 
       {(doctorCredentials || receptionistCredentials) && (
-        <div className="rounded-lg border bg-white p-4 space-y-2">
-          <div className="font-semibold text-gray-900">Generated credentials (shown once)</div>
+        <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
+          <div className="flex items-center gap-2 font-semibold text-text-primary">
+            <CheckCircle2 className="h-5 w-5 text-success" />
+            Generated credentials (shown once)
+          </div>
           {doctorKycWarning || receptionistKycWarning ? (
             <p className="text-xs text-amber-800 dark:text-amber-200/90">
               The accounts above were created successfully. See the warning above if KYC did not save.
             </p>
           ) : null}
           {doctorCredentialsList.length > 0 ? (
-            <div className="text-sm space-y-1">
-              <div className="font-medium">Doctors added</div>
+            <div className="space-y-2 text-sm">
+              <div className="font-medium text-text-primary">Doctors added</div>
               {doctorCredentialsList.map((cred) => (
-                <div key={cred.user_id}>
+                <div key={cred.user_id} className="rounded-xl bg-card p-3">
                   Doctor User ID: <span className="font-mono">{cred.user_id}</span> · Password:{" "}
                   <span className="font-mono">{cred.password}</span>
                 </div>
@@ -335,10 +363,10 @@ export default function AdminOnboarding() {
             </div>
           ) : null}
           {receptionistCredentialsList.length > 0 ? (
-            <div className="text-sm space-y-1">
-              <div className="font-medium">Receptionists added</div>
+            <div className="space-y-2 text-sm">
+              <div className="font-medium text-text-primary">Receptionists added</div>
               {receptionistCredentialsList.map((cred) => (
-                <div key={cred.user_id}>
+                <div key={cred.user_id} className="rounded-xl bg-card p-3">
                   Receptionist User ID: <span className="font-mono">{cred.user_id}</span> · Password:{" "}
                   <span className="font-mono">{cred.password}</span>
                 </div>
@@ -349,7 +377,7 @@ export default function AdminOnboarding() {
       )}
 
       {createdClinic?.id ? (
-        <div className="rounded-lg border bg-slate-50 p-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-card p-4 shadow-sm">
           <Button type="button" variant="outline" onClick={() => navigate(`/admin-dashboard/clinic/${createdClinic.id}`)}>
             Open clinic detail
           </Button>

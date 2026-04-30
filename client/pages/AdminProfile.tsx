@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useClinic } from "@/context/ClinicContext";
-import { Loader2, Lock, Unlock, AlertCircle } from "lucide-react";
+import { Loader2, Lock, Unlock, AlertCircle, ShieldCheck } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { apiUrl } from "@/lib/api-base";
 
 interface ClinicAccess {
   _id: string;
@@ -48,7 +50,7 @@ export default function AdminProfile() {
       const newMode = !currentMode;
       const clinicReason = reason[clinicId] || "";
 
-      const response = await fetch(`/api/clinic-access/${clinicId}`, {
+      const response = await fetch(apiUrl(`/api/clinic-access/${clinicId}`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -96,32 +98,36 @@ export default function AdminProfile() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="space-y-4">
+        <Skeleton className="h-24 rounded-2xl" />
+        <Skeleton className="h-32 rounded-2xl" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Profile</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-3xl font-bold text-text-primary">Admin Profile</h1>
+          <p className="mt-1 text-text-secondary">
             Manage clinic access and payment status
           </p>
+        </div>
+        <div className="rounded-2xl bg-primary/10 p-3">
+          <ShieldCheck className="h-6 w-6 text-primary" />
         </div>
       </div>
 
       {/* Clinic Access Control Section */}
       <div className="space-y-4">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-text-primary">
             Clinic Access Control
           </h2>
 
           {clinicAccess.length === 0 ? (
-            <p className="text-gray-600 text-center py-8">
+            <p className="rounded-2xl border border-dashed border-border bg-surface py-8 text-center text-text-secondary">
               No clinics available
             </p>
           ) : (
@@ -129,16 +135,16 @@ export default function AdminProfile() {
               {clinicAccess.map((clinic) => (
                 <div
                   key={clinic._id}
-                  className="flex items-start justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 transition-all hover:-translate-y-1 hover:shadow-md sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 mb-1">
+                    <h3 className="mb-1 font-semibold text-text-primary">
                       {clinic.name}
                     </h3>
-                    <p className="text-sm text-gray-600 mb-2">{clinic.email}</p>
+                    <p className="mb-2 text-sm text-text-secondary">{clinic.email}</p>
 
                     {clinic.readOnlyMode && (
-                      <div className="flex items-start gap-2 text-sm text-orange-700 bg-orange-50 p-2 rounded border border-orange-200">
+                      <div className="flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-3 text-sm text-text-primary">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="font-semibold">Access Disabled</p>
@@ -150,7 +156,7 @@ export default function AdminProfile() {
                     )}
                   </div>
 
-                  <div className="ml-4 flex flex-col gap-2">
+                  <div className="flex flex-col gap-2 sm:ml-4">
                     {clinic.readOnlyMode && !toggling[clinic._id] && (
                       <input
                         type="text"
@@ -162,7 +168,7 @@ export default function AdminProfile() {
                             [clinic._id]: e.target.value,
                           }));
                         }}
-                        className="text-xs border border-gray-300 rounded px-2 py-1 w-48"
+                        className="w-48 rounded-xl border-2 border-border bg-card px-3 py-2 text-xs"
                       />
                     )}
 

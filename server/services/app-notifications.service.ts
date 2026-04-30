@@ -4,6 +4,7 @@
  */
 import { getSupabaseClient } from "../config/supabase";
 import { EventEmitter } from "events";
+import { sendWebPushToUser } from "./web-push.service";
 
 export type NotificationType =
   | "patient_checked_in"
@@ -17,6 +18,9 @@ export type NotificationType =
   | "follow_up_booked"
   | "new_patient_registered"
   | "subscription_expiry"
+  | "staff_slot_request"
+  | "staff_slot_approved"
+  | "staff_slot_rejected"
   | "staff_created"
   | "day_closed"
   | "device_approved"
@@ -71,7 +75,7 @@ export async function createNotification(input: CreateNotificationInput): Promis
   }
 
   // Push to any connected SSE stream (non-blocking)
-  userEmitter.emit(userChannel(input.userId), {
+  const payload = {
     id,
     type: input.type,
     title: input.title,
@@ -79,6 +83,12 @@ export async function createNotification(input: CreateNotificationInput): Promis
     data: input.data ?? {},
     createdAt: new Date().toISOString(),
     isRead: false,
+  };
+  userEmitter.emit(userChannel(input.userId), payload);
+  void sendWebPushToUser(input.userId, {
+    title: input.title,
+    message: input.message,
+    data: input.data,
   });
 }
 

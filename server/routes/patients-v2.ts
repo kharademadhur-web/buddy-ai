@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth-jwt.middleware";
 import { requireRole } from "../middleware/rbac.middleware";
 import { normalizePhoneDigits } from "../services/otp-auth.service";
 import { sendJsonError } from "../lib/send-json-error";
+import { createNotification } from "../services/app-notifications.service";
 
 const router = Router();
 
@@ -90,6 +91,16 @@ router.post(
       .single();
 
     if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to save patient", "INTERNAL_SERVER_ERROR");
+    if (req.user?.userId) {
+      void createNotification({
+        userId: req.user.userId,
+        clinicId: parsed.data.clinicId,
+        type: "new_patient_registered",
+        title: "Patient registered",
+        message: `${data.name} has been saved to the clinic registry.`,
+        data: { patientId: data.id },
+      });
+    }
     return res.status(201).json({ success: true, patient: data });
   }
 );
@@ -228,6 +239,26 @@ router.post(
       .single();
 
     if (error || !data) return sendJsonError(res, 500, error?.message || "Failed to save vitals", "INTERNAL_SERVER_ERROR");
+    const { data: activeAppointment } = await supabase
+      .from("appointments")
+      .select("id, doctor_user_id")
+      .eq("clinic_id", clinicId)
+      .eq("patient_id", req.params.id)
+      .in("status", ["checked_in", "in_consultation"])
+      .order("appointment_time", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeAppointment?.doctor_user_id) {
+      void createNotification({
+        userId: activeAppointment.doctor_user_id,
+        clinicId,
+        type: "general",
+        title: "Patient vitals updated",
+        message: "New vitals were recorded for a patient in your queue.",
+        data: { patientId: req.params.id, appointmentId: activeAppointment.id, vitalsId: data.id },
+      });
+    }
     return res.status(201).json({ success: true, vitals: data });
   }
 );

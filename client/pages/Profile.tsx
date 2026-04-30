@@ -4,6 +4,9 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 import { ChangePasswordModal } from "../components/ChangePasswordModal";
 import { Button } from "../components/ui/button";
 import { useToast } from "../hooks/use-toast";
+import { apiUrl } from "../lib/api-base";
+import { Activity, ShieldCheck, UserCircle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Profile page
@@ -52,7 +55,7 @@ export function Profile() {
     if (!user?.id) return;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions`);
+      const response = await fetch(apiUrl(`/api/users/${encodeURIComponent(user.id)}/sessions`));
       if (response.ok) {
         const data = await response.json();
         setSessions(data.data || []);
@@ -72,7 +75,7 @@ export function Profile() {
     if (!user?.id) return;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/audit-logs`);
+      const response = await fetch(apiUrl(`/api/users/${encodeURIComponent(user.id)}/audit-logs`));
       if (response.ok) {
         const data = await response.json();
         setAuditLogs(data.data || []);
@@ -91,7 +94,7 @@ export function Profile() {
   const handleLogoutDevice = async (deviceId: string) => {
     if (!user?.id) return;
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions/logout`, {
+      const response = await fetch(apiUrl(`/api/users/${encodeURIComponent(user.id)}/sessions/logout`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceId }),
@@ -113,7 +116,7 @@ export function Profile() {
   const handleLogoutAllDevices = async () => {
     if (!user?.id) return;
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(user.id)}/sessions/logout-all`, {
+      const response = await fetch(apiUrl(`/api/users/${encodeURIComponent(user.id)}/sessions/logout-all`), {
         method: "POST",
       });
 
@@ -131,23 +134,24 @@ export function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen bg-surface p-4 animate-fade-in">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Profile / {sectionTitle}</p>
-          <h1 className="text-3xl font-bold text-gray-900 mt-1">Profile</h1>
+        <div className="mb-8 rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-accent">Profile / {sectionTitle}</p>
+          <h1 className="mt-1 text-3xl font-bold text-text-primary">Profile</h1>
+          <p className="mt-1 text-sm text-text-secondary">Manage account identity, password, sessions, and activity.</p>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-0 mb-6 border-b border-gray-200">
+        <div className="mb-6 flex gap-2 rounded-2xl bg-card p-1 shadow-sm">
           {validSections.map((tab) => (
             <button
               key={tab}
               onClick={() => navigate(`/profile/${tab}`)}
-              className={`px-4 py-2 font-medium border-b-2 -mb-px ${
+              className={`rounded-xl px-4 py-2 font-semibold transition-all ${
                 activeTab === tab
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
+                  ? "bg-primary text-white shadow-sm"
+                  : "text-text-secondary hover:bg-primary/5 hover:text-primary"
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -157,20 +161,23 @@ export function Profile() {
 
         {/* Basic Info Tab */}
         {activeTab === "basic" && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-600">Name</label>
-                <p className="text-lg text-gray-900">{user?.name || "N/A"}</p>
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3"><UserCircle className="h-6 w-6 text-primary" /></div>
+              <h2 className="text-xl font-semibold text-text-primary">Basic Information</h2>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl bg-surface p-4">
+                <label className="text-sm font-medium text-text-secondary">Name</label>
+                <p className="mt-1 text-lg font-semibold text-text-primary">{user?.name || "N/A"}</p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Contact</label>
-                <p className="text-lg text-gray-900">{user?.phone || user?.email || "N/A"}</p>
+              <div className="rounded-2xl bg-surface p-4">
+                <label className="text-sm font-medium text-text-secondary">Contact</label>
+                <p className="mt-1 text-lg font-semibold text-text-primary">{user?.phone || user?.email || "N/A"}</p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Role</label>
-                <p className="text-lg text-gray-900 capitalize">{user?.role || "N/A"}</p>
+              <div className="rounded-2xl bg-surface p-4">
+                <label className="text-sm font-medium text-text-secondary">Role</label>
+                <p className="mt-1 text-lg font-semibold text-text-primary capitalize">{user?.role || "N/A"}</p>
               </div>
             </div>
           </div>
@@ -180,44 +187,46 @@ export function Profile() {
         {activeTab === "security" && (
           <div className="space-y-6">
             {/* Password */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Password</h2>
-              <p className="text-gray-600 mb-4">
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-2xl bg-success/10 p-3"><ShieldCheck className="h-5 w-5 text-success" /></div>
+                <h2 className="text-xl font-semibold text-text-primary">Password</h2>
+              </div>
+              <p className="mb-4 text-text-secondary">
                 Change your password regularly to keep your account secure
               </p>
               <Button
                 onClick={() => setChangePasswordOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700"
               >
                 Change Password
               </Button>
             </div>
 
             {/* Active Sessions */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Active Sessions</h2>
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="mb-4 text-xl font-semibold text-text-primary">Active Sessions</h2>
               {isLoading ? (
-                <p className="text-gray-600">Loading...</p>
+                <div className="space-y-3"><Skeleton className="h-16 rounded-2xl" /><Skeleton className="h-16 rounded-2xl" /></div>
               ) : sessions.length === 0 ? (
-                <p className="text-gray-600">No active sessions</p>
+                <p className="rounded-2xl border border-dashed border-border bg-surface p-6 text-center text-text-secondary">No active sessions</p>
               ) : (
                 <div className="space-y-4">
                   {sessions.map((session) => (
                     <div
                       key={session._id}
-                      className="border border-gray-200 rounded p-4 flex justify-between items-start"
+                      className="flex items-start justify-between rounded-2xl border border-border bg-surface p-4"
                     >
                       <div>
-                        <p className="font-medium text-gray-900">
+                        <p className="font-medium text-text-primary">
                           {session.deviceInfo?.userAgent?.includes("Chrome")
                             ? "Chrome Browser"
                             : "Device"}
                         </p>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-text-secondary">
                           Last used:{" "}
                           {new Date(session.lastUsedAt).toLocaleString()}
                         </p>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-text-secondary">
                           IP: {session.ipAddress}
                         </p>
                       </div>
@@ -235,7 +244,7 @@ export function Profile() {
               {sessions.length > 0 && (
                 <Button
                   variant="outline"
-                  className="mt-4 text-red-600 border-red-200 hover:bg-red-50"
+                  className="mt-4 border-error/30 text-error hover:bg-error/10"
                   onClick={handleLogoutAllDevices}
                 >
                   Logout All Devices
@@ -247,32 +256,35 @@ export function Profile() {
 
         {/* Activity Tab */}
         {activeTab === "activity" && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">Login History</h2>
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="rounded-2xl bg-info/10 p-3"><Activity className="h-5 w-5 text-info" /></div>
+              <h2 className="text-xl font-semibold text-text-primary">Login History</h2>
+            </div>
             {isLoading ? (
-              <p className="text-gray-600">Loading...</p>
+              <div className="space-y-3"><Skeleton className="h-14 rounded-2xl" /><Skeleton className="h-14 rounded-2xl" /></div>
             ) : auditLogs.length === 0 ? (
-              <p className="text-gray-600">No activity yet</p>
+              <p className="rounded-2xl border border-dashed border-border bg-surface p-6 text-center text-text-secondary">No activity yet</p>
             ) : (
               <div className="space-y-2">
                 {auditLogs.slice(0, 10).map((log) => (
                   <div
                     key={log._id}
-                    className="border-b border-gray-200 py-3 flex justify-between"
+                    className="flex justify-between rounded-2xl border border-border bg-surface p-4"
                   >
                     <div>
-                      <p className="font-medium text-gray-900 capitalize">
+                      <p className="font-medium text-text-primary capitalize">
                         {log.action.replace(/_/g, " ")}
                       </p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-text-secondary">
                         {new Date(log.timestamp).toLocaleString()}
                       </p>
                     </div>
                     <span
                       className={`text-sm font-medium ${
                         log.status === "success"
-                          ? "text-green-600"
-                          : "text-red-600"
+                          ? "text-success"
+                          : "text-error"
                       }`}
                     >
                       {log.status}

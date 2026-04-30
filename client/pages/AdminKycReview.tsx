@@ -12,6 +12,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/api-base";
+import { FileCheck2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type DoctorRow = {
   userId: string;
@@ -118,13 +120,14 @@ export default function AdminKycReview() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-xl font-semibold text-gray-900">KYC Review</div>
-          <div className="text-sm text-gray-600">Review doctor documents and approve/reject.</div>
+          <div className="text-2xl font-bold text-text-primary">KYC Review</div>
+          <div className="text-sm text-text-secondary">Review doctor documents and approve/reject.</div>
         </div>
         <Button variant="outline" onClick={fetchPending} disabled={loading}>
+          <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
         </Button>
       </div>
@@ -136,22 +139,35 @@ export default function AdminKycReview() {
       ) : null}
 
       <div className="space-y-3">
+        {loading ? (
+          <>
+            <Skeleton className="h-20 rounded-2xl" />
+            <Skeleton className="h-20 rounded-2xl" />
+          </>
+        ) : null}
         {rows.length === 0 && !loading ? (
-          <div className="text-sm text-gray-600">No pending KYC submissions.</div>
+          <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+            <ShieldCheck className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+            <p className="font-semibold text-text-primary">No pending KYC submissions</p>
+            <p className="text-sm text-text-secondary">Doctor documents awaiting review will appear here.</p>
+          </div>
         ) : null}
 
         {rows.map((r) => (
-          <div key={r.userId} className="rounded-lg border bg-white p-4 flex items-center justify-between">
+          <div key={r.userId} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="font-semibold text-gray-900">
+              <div className="font-semibold text-text-primary">
                 {r.user?.name || "Doctor"}{" "}
-                <span className="ml-2 font-mono text-xs text-gray-500">{r.user?.user_id}</span>
+                <span className="ml-2 font-mono text-xs text-text-muted">{r.user?.user_id}</span>
               </div>
-              <div className="text-xs text-gray-600 mt-1">License: {r.licenseNumber}</div>
+              <div className="mt-1 text-xs text-text-secondary">License: {r.licenseNumber}</div>
             </div>
             <div className="flex items-center gap-3">
-              <Badge variant="secondary">{r.hasDocuments ? "submitted" : "missing docs"}</Badge>
+              <Badge className={r.hasDocuments ? "bg-success/10 text-success border-success/20" : "bg-warning/10 text-warning border-warning/20"}>
+                {r.hasDocuments ? "submitted" : "missing docs"}
+              </Badge>
               <Button size="sm" onClick={() => openDoctor(r.userId)} disabled={loading || !r.hasDocuments}>
+                <FileCheck2 className="mr-2 h-4 w-4" />
                 Review
               </Button>
             </div>
@@ -172,14 +188,14 @@ export default function AdminKycReview() {
             {["aadhaar", "pan", "signature"].map((k) => {
               const d = docs?.[k];
               return (
-                <div key={k} className="rounded-lg border p-3">
+                <div key={k} className="rounded-2xl border border-border bg-surface p-4">
                   <div className="text-sm font-semibold capitalize mb-2">{k}</div>
                   {d?.signedUrl ? (
-                    <a className="text-sm text-blue-600 underline" href={d.signedUrl} target="_blank" rel="noreferrer">
+                    <a className="text-sm font-semibold text-primary underline" href={d.signedUrl} target="_blank" rel="noreferrer">
                       Open signed URL
                     </a>
                   ) : (
-                    <div className="text-sm text-gray-600">Not provided</div>
+                    <div className="text-sm text-text-secondary">Not provided</div>
                   )}
                 </div>
               );

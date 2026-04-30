@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Loader2, Stethoscope, Monitor } from "lucide-react";
+import { AlertCircle, Loader2, Stethoscope, Monitor, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { IS_MOBILE_BUILD } from "@/config/buildTarget";
 
 const ADMIN_ROLES = ["super-admin", "clinic-admin"] as const;
@@ -54,8 +54,8 @@ export default function PortalLogin() {
       const loggedIn = await login(formData.user_id, formData.password);
       const role = loggedIn.role as string;
 
-      // On mobile build, block admin roles with a helpful message
-      if (IS_MOBILE_BUILD && ADMIN_ROLES.includes(role as AdminRole)) {
+      // On mobile build, only super-admin is web-only; clinic-admin remains available.
+      if (IS_MOBILE_BUILD && role === "super-admin") {
         setAdminRoleBlocked(role as AdminRole);
         return;
       }
@@ -68,43 +68,67 @@ export default function PortalLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-100 p-4 safe-area-inset">
-      <div className="w-full max-w-md">
-        {/* App header */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-3">
-            <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-4 shadow-lg">
-              <Stethoscope className="w-10 h-10 text-white" />
+    <div className="min-h-screen bg-surface safe-area-inset lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary-dark via-primary to-primary-light p-6 text-white lg:flex lg:min-h-screen lg:flex-col lg:justify-between lg:p-12">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(244,162,97,0.35),transparent_30%),radial-gradient(circle_at_80%_80%,rgba(255,255,255,0.18),transparent_30%)]" />
+        <div className="relative">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="rounded-2xl bg-white/15 p-3 shadow-lg backdrop-blur">
+              <Stethoscope className="h-8 w-8" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-extrabold text-white">SmartClinic</h1>
+              <p className="text-sm text-white/75">Buddy AI clinical workspace</p>
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-1">
-            {IS_MOBILE_BUILD ? "SmartClinic" : "Clinic Portal"}
-          </h1>
-          <p className="text-gray-500 text-sm">
-            {IS_MOBILE_BUILD ? "Doctor & Receptionist Login" : "Login for Doctor / Reception / Admin"}
-          </p>
+          <div className="max-w-xl">
+            <p className="mb-3 inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-semibold backdrop-blur">
+              Modern medical operations
+            </p>
+            <h2 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
+              Smarter clinics. Healthier patients.
+            </h2>
+            <p className="mt-4 text-base text-white/80">
+              Queue, consultation, billing, staff, and follow-ups in one calm, touch-friendly workspace.
+            </p>
+          </div>
         </div>
+        <div className="relative mt-8 grid gap-3 sm:grid-cols-3 lg:mt-0">
+          {[
+            { icon: ShieldCheck, title: "Secure access" },
+            { icon: Users, title: "Role-aware portals" },
+            { icon: Sparkles, title: "AI-ready workflows" },
+          ].map((item) => (
+            <div key={item.title} className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+              <item.icon className="mb-3 h-5 w-5 text-accent" />
+              <p className="text-sm font-semibold text-white">{item.title}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <Card className="shadow-lg">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Sign in</CardTitle>
-            <CardDescription>
-              Use the User ID issued during onboarding.
-            </CardDescription>
+      <main className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+        <Card className="w-full max-w-md border-0 shadow-2xl hover:translate-y-0">
+          <CardHeader className="space-y-2">
+            <CardTitle className="text-3xl">Welcome back</CardTitle>
+            <CardDescription>Use the User ID issued during onboarding.</CardDescription>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface p-1 text-xs font-semibold">
+              {["Doctor", "Reception", "Admin"].map((role) => (
+                <span key={role} className="rounded-xl bg-card px-3 py-2 text-center text-text-secondary shadow-sm">
+                  {role}
+                </span>
+              ))}
+            </div>
           </CardHeader>
 
           <CardContent className="space-y-4">
             {/* Admin blocked on mobile */}
-            {adminRoleBlocked && IS_MOBILE_BUILD && (
+            {(adminRoleBlocked || new URLSearchParams(location.search).get("blocked") === "super-admin") && IS_MOBILE_BUILD && (
               <Alert className="border-amber-300 bg-amber-50">
                 <Monitor className="h-4 w-4 text-amber-700" />
                 <AlertDescription className="text-amber-900 text-sm">
-                  <p className="font-semibold mb-1">Admin portal is web-only</p>
-                  <p>
-                    The <span className="font-semibold">{adminRoleBlocked}</span> portal is not available on the mobile
-                    app. Please open a browser on your computer and go to your clinic's admin URL to access admin
-                    features.
-                  </p>
+                  <p className="font-semibold mb-1">Super admin access is only available on the web platform</p>
+                  <p>Please open the web admin portal on desktop to access the platform-wide super-admin view.</p>
                 </AlertDescription>
               </Alert>
             )}
@@ -149,7 +173,7 @@ export default function PortalLogin() {
 
               <Button
                 type="submit"
-                className="w-full h-12 text-base active:scale-95 transition-transform"
+                className="h-12 w-full bg-accent text-base hover:bg-accent-dark"
                 disabled={isLoading || !formData.user_id || !formData.password}
               >
                 {isLoading ? (
@@ -166,12 +190,12 @@ export default function PortalLogin() {
             {/* Mobile info note */}
             {IS_MOBILE_BUILD && (
               <p className="text-xs text-center text-gray-400 pt-2">
-                This app is for Doctors and Receptionists only.
+                Mobile includes Doctor, Receptionist, and Clinic Admin portals.
               </p>
             )}
           </CardContent>
         </Card>
-      </div>
+      </main>
     </div>
   );
 }

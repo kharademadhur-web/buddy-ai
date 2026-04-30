@@ -3,6 +3,7 @@ import { Bell, X, CheckCheck, Loader2, AlertCircle, CheckCircle2, Pill, Calendar
 import { apiFetch, apiUrl } from "@/lib/api-base";
 import { useAdminAuth } from "@/context/AdminAuthContext";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 type Notification = {
   id: string;
@@ -39,6 +40,7 @@ function timeAgo(dateStr: string): string {
 
 export default function NotificationCenter() {
   const { tokens } = useAdminAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -80,6 +82,15 @@ export default function NotificationCenter() {
     } catch { /* silent */ }
   };
 
+  const openNotification = async (notification: Notification) => {
+    if (!notification.is_read) await markRead(notification.id);
+    const href = typeof notification.data?.href === "string" ? notification.data.href : null;
+    if (href) {
+      setOpen(false);
+      navigate(href);
+    }
+  };
+
   const markAllRead = async () => {
     try {
       await apiFetch("/api/notifications/read-all", { method: "POST", headers: authHeader() });
@@ -101,8 +112,14 @@ export default function NotificationCenter() {
 
     es.addEventListener("notification", (e) => {
       try {
-        const n = JSON.parse(e.data) as Notification;
-        setNotifications((prev) => [{ ...n, is_read: false }, ...prev]);
+        const raw = JSON.parse(e.data) as Notification & { createdAt?: string; isRead?: boolean };
+        const n: Notification = {
+          ...raw,
+          id: raw.id || `live-${Date.now()}`,
+          created_at: raw.created_at || raw.createdAt || new Date().toISOString(),
+          is_read: raw.is_read ?? raw.isRead ?? false,
+        };
+        setNotifications((prev) => [n, ...prev]);
         setUnreadCount((c) => c + 1);
       } catch { /* silent */ }
     });
@@ -150,12 +167,12 @@ export default function NotificationCenter() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+        className="relative rounded-xl p-2 transition-colors hover:bg-primary/10"
         aria-label="Notifications"
       >
-        <Bell className="w-5 h-5 text-gray-600" />
+        <Bell className="w-5 h-5 text-text-secondary" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+          <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] animate-pulse items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
@@ -168,34 +185,34 @@ export default function NotificationCenter() {
           <div className="fixed inset-0 bg-black/20 z-40 sm:hidden" onClick={() => setOpen(false)} />
 
           <div className={cn(
-            "fixed z-50 bg-white shadow-2xl border border-gray-200 flex flex-col",
+            "fixed z-50 flex flex-col border border-border bg-card shadow-2xl",
             // Tablet+: top-right panel
-            "sm:absolute sm:right-0 sm:top-10 sm:w-80 sm:max-h-[520px] sm:rounded-xl",
+            "sm:absolute sm:right-0 sm:top-10 sm:max-h-[520px] sm:w-[360px] sm:rounded-2xl",
             // Mobile: bottom sheet
-            "bottom-0 left-0 right-0 max-h-[75vh] rounded-t-2xl sm:rounded-xl",
+            "bottom-0 left-0 right-0 max-h-[75vh] rounded-t-2xl sm:rounded-2xl",
           )}>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900 text-sm">Notifications</h3>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
               <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
                   <button
                     type="button"
                     onClick={() => void markAllRead()}
-                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    className="flex items-center gap-1 text-xs text-primary hover:text-primary-dark"
                   >
                     <CheckCheck className="w-3.5 h-3.5" />
                     Mark all read
                   </button>
                 )}
-                <button type="button" onClick={() => setOpen(false)} className="p-1 hover:bg-gray-100 rounded">
-                  <X className="w-4 h-4 text-gray-500" />
+                <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1 hover:bg-primary/10">
+                  <X className="w-4 h-4 text-text-secondary" />
                 </button>
               </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-100">
+            <div className="flex border-b border-border">
               {(["all", "unread"] as const).map((t) => (
                 <button
                   key={t}
@@ -204,8 +221,8 @@ export default function NotificationCenter() {
                   className={cn(
                     "flex-1 text-xs font-medium py-2 transition-colors",
                     tab === t
-                      ? "border-b-2 border-blue-500 text-blue-600"
-                      : "text-gray-500 hover:text-gray-700"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-text-secondary hover:text-text-primary"
                   )}
                 >
                   {t === "all" ? "All" : `Unread${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
@@ -216,37 +233,39 @@ export default function NotificationCenter() {
             {/* List */}
             <div className="flex-1 overflow-y-auto overscroll-contain">
               {loading ? (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                <div className="space-y-3 p-4">
+                  <div className="h-14 rounded-2xl bg-muted animate-shimmer" />
+                  <div className="h-14 rounded-2xl bg-muted animate-shimmer" />
+                  <div className="h-14 rounded-2xl bg-muted animate-shimmer" />
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
-                  <Bell className="w-8 h-8 mb-2 opacity-30" />
-                  <p className="text-sm">{tab === "unread" ? "No unread notifications" : "No notifications yet"}</p>
+                <div className="flex flex-col items-center justify-center py-10 text-text-muted">
+                  <Bell className="mb-2 h-8 w-8 opacity-30" />
+                  <p className="text-sm">You're all caught up!</p>
                 </div>
               ) : (
                 <ul>
                   {filtered.map((n) => (
                     <li
                       key={n.id}
-                      onClick={() => !n.is_read && void markRead(n.id)}
+                      onClick={() => void openNotification(n)}
                       className={cn(
-                        "flex gap-3 px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors",
-                        !n.is_read && "bg-blue-50/40"
+                        "flex cursor-pointer gap-3 border-b border-border/60 px-4 py-3 transition-colors hover:bg-primary/5",
+                        !n.is_read && "bg-primary/5"
                       )}
                     >
                       <div className="mt-0.5">
                         <NotificationIcon type={n.type} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={cn("text-xs font-semibold text-gray-900 leading-tight", !n.is_read && "font-bold")}>
+                        <p className={cn("text-xs font-semibold text-text-primary leading-tight", !n.is_read && "font-bold")}>
                           {n.title}
                         </p>
-                        <p className="text-xs text-gray-600 mt-0.5 leading-relaxed line-clamp-2">{n.message}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-secondary">{n.message}</p>
                         <div className="flex items-center gap-1 mt-1">
-                          <Clock className="w-3 h-3 text-gray-400" />
-                          <span className="text-[10px] text-gray-400">{timeAgo(n.created_at)}</span>
-                          {!n.is_read && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />}
+                          <Clock className="h-3 w-3 text-text-muted" />
+                          <span className="text-[10px] text-text-muted">{timeAgo(n.created_at)}</span>
+                          {!n.is_read && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-primary" />}
                         </div>
                       </div>
                     </li>

@@ -219,11 +219,11 @@ export default function AdminClinicBilling() {
   const expOk = exp && !Number.isNaN(exp.getTime()) && exp.getTime() > Date.now();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Billing &amp; subscription</h2>
-          <p className="text-sm text-gray-600">
+          <h2 className="text-2xl font-bold text-text-primary">Billing &amp; subscription</h2>
+          <p className="text-sm text-text-secondary">
             Plan, renewal date, payment history, and online renewal for your clinic.
           </p>
         </div>
@@ -275,26 +275,26 @@ export default function AdminClinicBilling() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-sm text-gray-600">Status:</span>
+              <span className="text-sm text-text-secondary">Status:</span>
               <Badge variant={status === "live" && expOk ? "default" : "destructive"}>
                 {clinic?.subscription_status ?? "—"}
               </Badge>
             </div>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-text-secondary">
               Monthly plan: ₹
               {Number(clinic?.saas_plan_amount_monthly ?? 5999).toLocaleString("en-IN")}
             </p>
             {exp ? (
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-text-secondary">
                 Current period ends:{" "}
                 <span className="font-medium">{exp.toLocaleDateString("en-IN")}</span>
                 {clinic?.days_remaining != null ? (
-                  <span className="text-gray-500"> ({clinic.days_remaining} days)</span>
+                  <span className="text-text-muted"> ({clinic.days_remaining} days)</span>
                 ) : null}
               </p>
             ) : null}
             {clinic?.last_saas_payment ? (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Last recorded payment: ₹
                 {Number((clinic.last_saas_payment as { amount?: number }).amount ?? 0).toLocaleString("en-IN")}{" "}
                 on{" "}
@@ -333,14 +333,14 @@ export default function AdminClinicBilling() {
                   {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Pay with Razorpay
                 </Button>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Configure <code className="text-[10px]">RAZORPAY_KEY_ID</code> and{" "}
                   <code className="text-[10px]">RAZORPAY_KEY_SECRET</code> on the server. Webhook:{" "}
                   <code className="text-[10px]">/api/admin/billing-saas/webhook</code>
                 </p>
               </>
             ) : (
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-secondary">
                 Online payments are not enabled yet. Contact your platform administrator to record a
                 subscription payment, or ask them to configure Razorpay keys.
               </p>
@@ -356,31 +356,35 @@ export default function AdminClinicBilling() {
         </CardHeader>
         <CardContent>
           {payments.length === 0 ? (
-            <p className="text-sm text-gray-500">No payments recorded yet.</p>
+            <div className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
+              <CreditCard className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+              <p className="font-semibold text-text-primary">No payments recorded yet</p>
+              <p className="text-sm text-text-secondary">Subscription payments and Razorpay renewals will appear here.</p>
+            </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-100">
+            <div className="overflow-x-auto rounded-2xl border border-border">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-gray-600">
+                  <tr className="bg-surface text-left text-xs uppercase text-text-secondary">
                     <th className="px-3 py-2">Paid</th>
                     <th className="px-3 py-2">Amount</th>
                     <th className="px-3 py-2">Period</th>
                     <th className="px-3 py-2">Notes</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {payments.map((p) => (
-                    <tr key={p.id}>
+                    <tr key={p.id} className="transition-colors hover:bg-primary/5">
                       <td className="px-3 py-2 whitespace-nowrap">
                         {p.paid_at ? new Date(p.paid_at).toLocaleString("en-IN") : "—"}
                       </td>
                       <td className="px-3 py-2">₹{Number(p.amount ?? 0).toLocaleString("en-IN")}</td>
-                      <td className="px-3 py-2 text-xs text-gray-600">
+                      <td className="px-3 py-2 text-xs text-text-secondary">
                         {p.period_start && p.period_end
                           ? `${new Date(p.period_start).toLocaleDateString("en-IN")} → ${new Date(p.period_end).toLocaleDateString("en-IN")}`
                           : "—"}
                       </td>
-                      <td className="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">{p.notes || "—"}</td>
+                      <td className="max-w-xs truncate px-3 py-2 text-xs text-text-muted">{p.notes || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

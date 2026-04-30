@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useToast } from "../hooks/use-toast";
 import { getOrCreateDeviceId } from "../lib/device-fingerprint";
+import { apiUrl } from "../lib/api-base";
 
 /**
  * SetPassword page
@@ -62,7 +63,7 @@ export function SetPassword() {
         throw new Error("OTP session expired. Please verify again.");
       }
 
-      const response = await fetch("/api/auth/password-change/complete", {
+      const response = await fetch(apiUrl("/api/auth/password-change/complete"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

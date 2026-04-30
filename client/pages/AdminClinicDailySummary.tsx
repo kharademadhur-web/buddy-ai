@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AdminClinicDailySummary() {
   const { user } = useAdminAuth();
@@ -51,17 +52,17 @@ export default function AdminClinicDailySummary() {
 
   if (user.role !== "clinic-admin") {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className="rounded-2xl border border-warning/20 bg-warning/10 p-4 text-sm text-text-primary">
         Sign in as a clinic admin to see collections and visit counts for your clinic.
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Daily summary</h2>
-        <p className="mt-1 text-gray-600">
+        <h2 className="text-2xl font-bold text-text-primary">Daily summary</h2>
+        <p className="mt-1 text-text-secondary">
           Patient bill collections and completed visits for your clinic (from billing data).
         </p>
       </div>
@@ -86,35 +87,36 @@ export default function AdminClinicDailySummary() {
       </div>
 
       {loading ? (
-        <div className="flex min-h-[24vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Skeleton className="h-36 rounded-2xl" />
+          <Skeleton className="h-36 rounded-2xl" />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Collected (paid bills)</CardTitle>
+              <CardTitle className="text-sm font-medium text-text-secondary">Collected (paid bills)</CardTitle>
               <CardDescription>{date}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <div className="text-3xl font-bold text-gray-900">
+                <div className="animate-count-up text-3xl font-bold text-text-primary">
                   ₹{totalCollected.toLocaleString("en-IN")}
                 </div>
-                <IndianRupee className="h-8 w-8 text-emerald-500 opacity-40" />
+                <IndianRupee className="h-8 w-8 text-success opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Completed visits</CardTitle>
+              <CardTitle className="text-sm font-medium text-text-secondary">Completed visits</CardTitle>
               <CardDescription>Appointments marked completed that day</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <div className="text-3xl font-bold text-gray-900">{completedToday}</div>
-                <CalendarCheck className="h-8 w-8 text-blue-500 opacity-40" />
+                <div className="animate-count-up text-3xl font-bold text-text-primary">{completedToday}</div>
+                <CalendarCheck className="h-8 w-8 text-info opacity-50" />
               </div>
             </CardContent>
           </Card>

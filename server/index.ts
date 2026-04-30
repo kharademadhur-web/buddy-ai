@@ -30,6 +30,7 @@ import messagingWhatsappRoutes from "./routes/messaging-whatsapp";
 import medicinesRoutes from "./routes/medicines";
 import followupsV2Routes from "./routes/followups-v2";
 import notificationsRoutes from "./routes/notifications";
+import staffRequestsRoutes from "./routes/staff-requests";
 
 function isLocalhostOrigin(origin: string): boolean {
   try {
@@ -217,6 +218,7 @@ export async function createServer() {
 
   // User management (doctors, receptionists)
   app.use("/api/admin/users", usersAdminRoutes);
+  app.use("/api", staffRequestsRoutes);
 
   // KYC uploads & signed URLs
   app.use("/api/admin/kyc", kycAdminRoutes);

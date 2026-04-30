@@ -94,7 +94,8 @@ export default function PrescriptionCanvas({
     const canvas = canvasRef.current;
     if (!el || !canvas) return;
     const w = Math.max(200, el.clientWidth);
-    const h = 160;
+    // Taller canvas on tablet/desktop; compact on small phones
+    const h = window.innerWidth >= 768 ? Math.min(Math.floor(window.innerHeight * 0.45), 360) : 200;
     canvas.width = w;
     canvas.height = h;
     redraw(linesRef.current, drawingRef.current);
@@ -130,6 +131,17 @@ export default function PrescriptionCanvas({
     if (!canvas) return [0, 0];
     const r = canvas.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
+  };
+
+  /**
+   * Palm rejection: allow pen/mouse always; for touch only accept small contact areas
+   * (fingertip or stylus tip ≤ 30px). Large palm contacts are ignored.
+   */
+  const isPalmRejected = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
+    if (e.pointerType === "pen" || e.pointerType === "mouse") return false;
+    // pointerType === "touch" — reject if the contact area is large (palm)
+    const contactSize = Math.max(e.width ?? 0, e.height ?? 0);
+    return contactSize > 30;
   };
 
   const pushVoiceToParent = useCallback(
@@ -395,7 +407,7 @@ export default function PrescriptionCanvas({
             }}
             disabled={isRecording || summarizing}
             className={cn(
-              "flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all",
+              "flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all min-h-[48px] active:scale-95",
               "bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
             )}
           >
@@ -407,7 +419,7 @@ export default function PrescriptionCanvas({
             type="button"
             onClick={() => void finalizeWithSummary()}
             disabled={summarizing || (!liveTranscript.trim() && !isRecording)}
-            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 min-h-[48px] active:scale-95 transition-transform"
           >
             {summarizing ? (
               <>
@@ -436,7 +448,7 @@ export default function PrescriptionCanvas({
             <button
               type="button"
               onClick={clearHandwriting}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-100"
+              className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 min-h-[44px] active:scale-95 transition-transform"
             >
               <Eraser className="w-3.5 h-3.5" />
               Clear pad
@@ -446,14 +458,19 @@ export default function PrescriptionCanvas({
             <canvas
               ref={canvasRef}
               className="w-full touch-none cursor-crosshair block"
+              style={{ touchAction: "none" }}
               onPointerDown={(e) => {
+                if (isPalmRejected(e)) return;
+                e.preventDefault();
                 e.currentTarget.setPointerCapture(e.pointerId);
                 const p = toLocal(e);
                 drawingRef.current = { points: [p] };
                 redraw(linesRef.current, drawingRef.current);
               }}
               onPointerMove={(e) => {
+                if (isPalmRejected(e)) return;
                 if (!drawingRef.current) return;
+                e.preventDefault();
                 const p = toLocal(e);
                 drawingRef.current.points.push(p);
                 redraw(linesRef.current, drawingRef.current);
@@ -498,7 +515,7 @@ export default function PrescriptionCanvas({
               onClick={() => void convertPadToText()}
               disabled={padOcrLoading || lines.length === 0}
               className={cn(
-                "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors",
+                "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-all min-h-[44px] active:scale-95",
                 "bg-white border-violet-300 text-violet-900 hover:bg-violet-50 disabled:opacity-50"
               )}
             >
@@ -543,7 +560,7 @@ export default function PrescriptionCanvas({
         <button
           type="button"
           onClick={() => onChange("")}
-          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold text-sm flex items-center gap-2"
+          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold text-sm flex items-center gap-2 min-h-[44px] active:scale-95 transition-transform"
         >
           <Trash2 className="w-4 h-4" />
           Clear notes
